@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WorkBuddy 工作台 · 菜谱专区</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-logo">WB</div>
+        <div class="brand-text">
+          <div class="brand-title">WorkBuddy 工作台</div>
+          <div class="brand-sub">菜谱专区 · 首期</div>
+        </div>
+      </div>
+      <nav class="nav" id="nav">
+        <button class="nav-item active" data-view="library">
+          <span class="nav-ico">📖</span><span>菜谱库</span>
+        </button>
+        <button class="nav-item" data-view="purchase">
+          <span class="nav-ico">🛒</span><span>点菜采购</span>
+        </button>
+        <button class="nav-item" data-view="filter">
+          <span class="nav-ico">🏷️</span><span>菜谱分类筛选</span>
+        </button>
+        <button class="nav-item" data-view="nutrition">
+          <span class="nav-ico">🔥</span><span>营养热量测算</span>
+        </button>
+        <button class="nav-item" data-view="favorites">
+          <span class="nav-ico">📋</span><span>菜谱收藏夹</span>
+        </button>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="foot-line">首期开放 · 菜谱专区</div>
+        <div class="foot-line dim">营养热量 / 更多模块陆续上线</div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="crumb" id="crumb">菜谱库</div>
+        <div class="topbar-search">
+          <span class="search-ico">🔍</span>
+          <input type="search" id="searchBox" class="search-box" placeholder="搜索菜谱（名称 / 食材 / 标签）…" autocomplete="off" />
+        </div>
+        <button class="topbar-sync" data-action="open-sync" title="云端同步设置（GitHub）">
+          <span id="syncDot" class="sync-dot"></span>☁ 同步
+        </button>
+        <div class="topbar-actions" id="topbarActions"></div>
+      </header>
+      <div class="content" id="content"></div>
+    </main>
+  </div>
+
+  <div class="modal-root" id="modalRoot"></div>
+  <div class="toast" id="toast"></div>
+
+  <script defer src="app.js"></script>
+</body>
+</html>
