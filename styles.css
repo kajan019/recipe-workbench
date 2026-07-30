@@ -320,6 +320,45 @@ body {
   .sel-row .tg { margin-left: auto; }
 }
 
+/* ============ 手机适配（竖屏手机，≤720px） ============ */
+@media (max-width: 720px) {
+  /* 整体改为纵向排列，整页可滚动 */
+  .app { flex-direction: column; height: auto; min-height: 100vh; overflow: visible; }
+
+  /* 左侧竖排导航 → 顶部横排、可左右滑动 */
+  .sidebar {
+    flex: 0 0 auto; width: auto; flex-direction: row; align-items: center;
+    padding: 8px 10px; border-right: none; border-bottom: 1px solid var(--border);
+    gap: 4px; overflow-x: auto; -webkit-overflow-scrolling: touch;
+  }
+  .sidebar .brand, .sidebar-foot { display: none; }
+  .nav { flex-direction: row; gap: 6px; }
+  .nav-item { padding: 8px 12px; white-space: nowrap; font-size: 13px; border-radius: 999px; }
+
+  /* 顶栏：搜索与按钮自动换行、不挤 */
+  .main { min-width: 0; }
+  .topbar { height: auto; flex: 0 0 auto; padding: 8px 10px; gap: 8px; flex-wrap: wrap; }
+  .topbar-search { flex: 1 1 auto; max-width: none; margin: 0; min-width: 0; }
+  .topbar-actions { flex: 0 0 auto; }
+
+  /* 内容区收窄留白 */
+  .content { padding: 14px 12px; overflow: visible; }
+  .editor { padding: 0; }
+
+  /* 双列字段、封面区改竖排 */
+  .field-row { flex-direction: column; gap: 0; }
+  .cover-zone { flex-direction: column; }
+
+  /* 食材/调味料分列在手机上改单列 */
+  .rows.cols { grid-template-columns: 1fr; }
+
+  /* 弹窗不要超出屏幕 */
+  .modal-panel { max-width: 94vw; }
+  .crop-modal { max-width: 94vw; }
+
+  body { font-size: 15px; }
+}
+
 .purchase-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
 @media (max-width: 820px) { .purchase-cols { grid-template-columns: 1fr; } }
 .pcol { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
