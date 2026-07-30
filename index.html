@@ -3,17 +3,17 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>WorkBuddy 工作台 · 菜谱专区</title>
+  <title>绵绵的工作台</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <div class="app">
     <aside class="sidebar">
       <div class="brand">
-        <div class="brand-logo">WB</div>
+        <div class="brand-avatar">🐱</div>
         <div class="brand-text">
-          <div class="brand-title">WorkBuddy 工作台</div>
-          <div class="brand-sub">菜谱专区 · 首期</div>
+          <div class="brand-title">绵绵的工作台</div>
+          <div class="brand-sub">菜谱专区</div>
         </div>
       </div>
       <nav class="nav" id="nav">
@@ -41,7 +41,10 @@
 
     <main class="main">
       <header class="topbar">
-        <div class="crumb" id="crumb">菜谱库</div>
+        <div class="topbar-left">
+          <div class="crumb" id="crumb">绵绵的工作台</div>
+        </div>
+        <div class="brand-avatar sm" title="绵绵的工作台">🐱</div>
         <div class="topbar-search">
           <span class="search-ico">🔍</span>
           <input type="search" id="searchBox" class="search-box" placeholder="搜索菜谱（名称 / 食材 / 标签）…" autocomplete="off" />
@@ -53,6 +56,30 @@
       </header>
       <div class="content" id="content"></div>
     </main>
+
+    <!-- 手机端底部Tab栏 -->
+    <nav class="mobile-tabs" id="mobileTabs">
+      <button class="m-tab active" data-view="library">
+        <span class="m-tab-ico">🏠</span>
+        <span class="m-tab-label">首页</span>
+      </button>
+      <button class="m-tab" data-view="favorites">
+        <span class="m-tab-ico">📋</span>
+        <span class="m-tab-label">收藏</span>
+      </button>
+      <button class="m-tab" data-view="purchase">
+        <span class="m-tab-ico">🛒</span>
+        <span class="m-tab-label">采购</span>
+      </button>
+      <button class="m-tab" id="mTabAdd">
+        <span class="m-tab-ico">＋</span>
+        <span class="m-tab-label">新增</span>
+      </button>
+      <button class="m-tab" data-view="library" data-action="open-sync">
+        <span class="m-tab-ico">☁️</span>
+        <span class="m-tab-label">同步</span>
+      </button>
+    </nav>
   </div>
 
   <div class="modal-root" id="modalRoot"></div>

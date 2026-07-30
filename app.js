@@ -665,6 +665,11 @@ function navigate(view) {
 }
 function render() {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === state.view));
+  // 同步手机端底部 Tab 的高亮状态
+  document.querySelectorAll('.m-tab').forEach(t => {
+    if (t.id === 'mTabAdd') { t.classList.toggle('active', !!state.editing); return; }
+    if (t.dataset.view) t.classList.toggle('active', t.dataset.view === state.view);
+  });
   if (state.view === 'library' && state.editing) { renderEditor(); return; }
   if (state.view === 'library' && state.viewId) { renderRecipeView(state.viewId); return; }
   if (state.view === 'library') { renderLibrary(); return; }
@@ -697,7 +702,7 @@ function recipeMatches(r, q) {
   return hay.includes(q);
 }
 function renderLibrary() {
-  setChrome('菜谱库', `<button class="btn primary" data-action="open-editor-new">＋ 新增菜谱</button>`);
+  setChrome('绵绵的工作台', `<button class="btn primary" data-action="open-editor-new">＋ 新增菜谱</button>`);
   const q = (state.search || '').trim();
   const list = q ? state.recipes.filter(r => recipeMatches(r, q)) : state.recipes;
   const content = $('content');
@@ -710,7 +715,8 @@ function renderLibrary() {
     return;
   }
   const banner = q ? `<div class="search-banner">🔍 搜索「${escHtml(q)}」：${list.length} 道菜谱</div>` : '';
-  content.innerHTML = banner + `<div class="grid">${list.map(recipeCardHTML).join('')}</div>`;
+  const hero = heroCardHTML();
+  content.innerHTML = hero + banner + `<div class="grid">${list.map(recipeCardHTML).join('')}</div>`;
 }
 function countText(r) {
   const i = r.sections.ingredients.filter(b => b.kind === 'item').length;
@@ -718,6 +724,41 @@ function countText(r) {
   const p = r.sections.steps.filter(b => b.kind === 'item').length;
   const pr = (r.sections.prep || []).length;
   return `食材 ${i} · 调味料 ${s} · 备菜 ${pr} · 步骤 ${p}`;
+}
+/* 首页概览卡（参考 趣AI记账 紫色渐变卡 + 快捷按钮 + 分类入口） */
+function heroCardHTML() {
+  const total = state.recipes.length;
+  const favCount = state.collections.length;
+  const catIcons = { '禽类': '🐔', '畜类': '🐷', '鱼类': '🐟', '其他水产': '🦐', '素菜': '🥬', '主食类': '🍚', '其他': '🍽️' };
+  const cats = CATEGORY_TAGS.map(c =>
+    `<button class="qcat" data-action="goto-filter" data-cat="${escAttr(c)}">
+       <span class="qcat-ico">${catIcons[c] || '🍴'}</span>
+       <span class="qcat-name">${escHtml(c)}</span>
+     </button>`).join('');
+  return `
+  <div class="hero-card">
+    <div class="hero-top">
+      <div class="hero-info">
+        <div class="hero-label">绵绵的菜谱</div>
+        <div class="hero-num">${total}</div>
+        <div class="hero-sub">道拿手菜 · ${favCount} 条收藏待整理</div>
+      </div>
+      <div class="hero-emoji">🐱</div>
+    </div>
+    <div class="hero-actions">
+      <button class="hero-btn pink" data-action="open-editor-new">＋ 新增菜谱</button>
+      <button class="hero-btn mint" data-action="fav-add">📋 添加收藏</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:16px;color:rgba(255,255,255,.9);font-size:13px;font-weight:600;">
+      📋 快捷分类
+    </div>
+    <div class="qcat-grid">${cats}</div>
+  </div>`;
+}
+/* 分类入口：跳到分类筛选并预选该分类 */
+function gotoFilterCat(cat) {
+  state.filter = { cat: cat ? [cat] : [], cook: [] };
+  navigate('filter');
 }
 function recipeCardHTML(r) {
   const cover = r.cover ? `style="background-image:url('${r.cover}')"` : '';
@@ -1375,6 +1416,7 @@ async function handleClick(e) {
 
   switch (a) {
     case 'open-editor-new': openEditor(null); break;
+    case 'goto-filter': gotoFilterCat(t.dataset.cat); break;
     case 'view-recipe': renderRecipeView(t.dataset.id); break;
     case 'back-library': state.viewId = null; renderLibrary(); break;
     case 'edit-recipe': openEditor(t.dataset.id); break;
@@ -1884,6 +1926,17 @@ function init() {
     const item = e.target.closest('.nav-item');
     if (item) navigate(item.dataset.view);
   });
+  // 手机端底部 Tab 栏：导航 + 新增 + 同步 三个入口
+  const mobileTabs = document.getElementById('mobileTabs');
+  if (mobileTabs) {
+    mobileTabs.addEventListener('click', (e) => {
+      const tab = e.target.closest('.m-tab');
+      if (!tab) return;
+      if (tab.id === 'mTabAdd') { openEditor(null); return; }
+      if (tab.dataset.action === 'open-sync') { openSyncModal(); return; }
+      if (tab.dataset.view) navigate(tab.dataset.view);
+    });
+  }
   // 监听绑定在 document 上，覆盖顶栏操作按钮与弹窗（均不在 #content 内）
   document.addEventListener('click', handleClick);
   document.addEventListener('input', handleInput);
