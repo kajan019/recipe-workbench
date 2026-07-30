@@ -657,6 +657,65 @@ function downloadText(name, text) {
   toast('已导出采购清单');
 }
 
+/* ---------------- 导航配置（数据驱动，桌面侧栏与手机抽屉共用） ---------------- */
+/* 以后加「备忘录 / 行程」等模块，只需在 NAV 里加一个分组即可，两端自动出现 */
+const NAV = [
+  { title: '我的菜板', items: [
+    { view: 'library',   icon: '📖', label: '菜谱库' },
+    { view: 'purchase',  icon: '🛒', label: '点菜采购' },
+    { view: 'filter',    icon: '🏷️', label: '菜谱分类' },
+    { view: 'nutrition', icon: '🔥', label: '营养热量' },
+    { view: 'favorites', icon: '📋', label: '菜谱收藏夹' },
+  ]},
+  { title: '工具', items: [
+    { view: '__sync__', icon: '☁️', label: '云端同步' },
+  ]},
+];
+
+function renderNav() {
+  const html = NAV.map(g => `
+    <div class="nav-group">
+      <div class="nav-group-title">${escHtml(g.title)}</div>
+      ${g.items.map(it => `
+        <button class="nav-item" data-view="${escAttr(it.view)}">
+          <span class="nav-ico">${it.icon}</span><span>${escHtml(it.label)}</span>
+        </button>`).join('')}
+    </div>`).join('');
+  const nav = document.getElementById('nav');
+  const drawerNav = document.getElementById('drawerNav');
+  if (nav) nav.innerHTML = html;
+  if (drawerNav) drawerNav.innerHTML = html;
+}
+
+/* 手机端抽屉开关 + 悬浮新增（由 document 级 onChromeClick 统一处理） */
+function openDrawer() {
+  const d = document.getElementById('drawer'), m = document.getElementById('drawerMask');
+  if (d) d.classList.add('open'); if (m) m.classList.add('open');
+}
+function closeDrawer() {
+  const d = document.getElementById('drawer'), m = document.getElementById('drawerMask');
+  if (d) d.classList.remove('open'); if (m) m.classList.remove('open');
+}
+function toggleDrawer() {
+  const d = document.getElementById('drawer');
+  if (!d) return;
+  d.classList.contains('open') ? closeDrawer() : openDrawer();
+}
+function onChromeClick(e) {
+  const navItem = e.target.closest('.nav-item');
+  if (navItem) {
+    const v = navItem.dataset.view;
+    closeDrawer();
+    if (!v) return;
+    if (v === '__sync__') { openSyncModal(); return; }
+    navigate(v);
+    return;
+  }
+  if (e.target.closest('#hamburger')) { toggleDrawer(); return; }
+  if (e.target.closest('#drawerMask') || e.target.closest('#drawerClose')) { closeDrawer(); return; }
+  if (e.target.closest('#fabAdd')) { openEditor(null); return; }
+}
+
 /* ---------------- 路由 / 渲染分发 ---------------- */
 function navigate(view) {
   if (view !== 'library') { state.editing = null; state.viewId = null; }
@@ -664,11 +723,9 @@ function navigate(view) {
   render();
 }
 function render() {
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === state.view));
-  // 同步手机端底部 Tab 的高亮状态
-  document.querySelectorAll('.m-tab').forEach(t => {
-    if (t.id === 'mTabAdd') { t.classList.toggle('active', !!state.editing); return; }
-    if (t.dataset.view) t.classList.toggle('active', t.dataset.view === state.view);
+  document.querySelectorAll('.nav-item').forEach(n => {
+    const v = n.dataset.view;
+    n.classList.toggle('active', !!v && v !== '__sync__' && v === state.view);
   });
   if (state.view === 'library' && state.editing) { renderEditor(); return; }
   if (state.view === 'library' && state.viewId) { renderRecipeView(state.viewId); return; }
@@ -1922,21 +1979,8 @@ function handleChange(e) {
 function init() {
   load();
   ensureUnitList();
-  $('nav').addEventListener('click', (e) => {
-    const item = e.target.closest('.nav-item');
-    if (item) navigate(item.dataset.view);
-  });
-  // 手机端底部 Tab 栏：导航 + 新增 + 同步 三个入口
-  const mobileTabs = document.getElementById('mobileTabs');
-  if (mobileTabs) {
-    mobileTabs.addEventListener('click', (e) => {
-      const tab = e.target.closest('.m-tab');
-      if (!tab) return;
-      if (tab.id === 'mTabAdd') { openEditor(null); return; }
-      if (tab.dataset.action === 'open-sync') { openSyncModal(); return; }
-      if (tab.dataset.view) navigate(tab.dataset.view);
-    });
-  }
+  renderNav();                                  // 渲染桌面侧边栏 + 手机抽屉导航（数据驱动，便于扩展）
+  document.addEventListener('click', onChromeClick);   // 导航项 / 汉堡菜单 / 抽屉开关 / 悬浮新增
   // 监听绑定在 document 上，覆盖顶栏操作按钮与弹窗（均不在 #content 内）
   document.addEventListener('click', handleClick);
   document.addEventListener('input', handleInput);

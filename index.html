@@ -42,6 +42,7 @@
     <main class="main">
       <header class="topbar">
         <div class="topbar-left">
+          <button class="hamburger" id="hamburger" aria-label="功能菜单" title="功能菜单">☰</button>
           <div class="crumb" id="crumb">绵绵的工作台</div>
         </div>
         <div class="brand-avatar sm" title="绵绵的工作台">🐱</div>
@@ -57,30 +58,24 @@
       <div class="content" id="content"></div>
     </main>
 
-    <!-- 手机端底部Tab栏 -->
-    <nav class="mobile-tabs" id="mobileTabs">
-      <button class="m-tab active" data-view="library">
-        <span class="m-tab-ico">🏠</span>
-        <span class="m-tab-label">首页</span>
-      </button>
-      <button class="m-tab" data-view="favorites">
-        <span class="m-tab-ico">📋</span>
-        <span class="m-tab-label">收藏</span>
-      </button>
-      <button class="m-tab" data-view="purchase">
-        <span class="m-tab-ico">🛒</span>
-        <span class="m-tab-label">采购</span>
-      </button>
-      <button class="m-tab" id="mTabAdd">
-        <span class="m-tab-ico">＋</span>
-        <span class="m-tab-label">新增</span>
-      </button>
-      <button class="m-tab" data-view="library" data-action="open-sync">
-        <span class="m-tab-ico">☁️</span>
-        <span class="m-tab-label">同步</span>
-      </button>
-    </nav>
+    <!-- 手机端底部Tab栏已改为左侧抽屉（见下方 .drawer），此处保留 .app 闭合 -->
   </div>
+
+  <!-- 手机端：左侧滑出功能抽屉 + 遮罩 + 悬浮新增按钮（桌面端隐藏） -->
+  <div class="drawer-mask" id="drawerMask"></div>
+  <aside class="drawer" id="drawer">
+    <div class="drawer-head">
+      <div class="brand-avatar">🐱</div>
+      <div class="drawer-title">
+        <div class="brand-title">绵绵的工作台</div>
+        <div class="brand-sub">个人工作台 · 菜谱专区</div>
+      </div>
+      <button class="drawer-close" id="drawerClose" aria-label="关闭菜单">✕</button>
+    </div>
+    <nav class="drawer-nav" id="drawerNav"></nav>
+    <div class="drawer-foot">首期开放 · 菜谱专区<br>备忘录 / 行程 等模块陆续上线</div>
+  </aside>
+  <button class="fab-add" id="fabAdd" aria-label="新增菜谱" title="新增菜谱">＋</button>
 
   <div class="modal-root" id="modalRoot"></div>
   <div class="toast" id="toast"></div>

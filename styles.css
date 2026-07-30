@@ -380,8 +380,19 @@ body {
   .sel-row .tg { margin-left: auto; }
 }
 
-/* ============ 手机底部 Tab 栏（默认隐藏，仅手机显示） ============ */
-.mobile-tabs { display: none; }
+/* ============ 导航分组（桌面侧栏 + 手机抽屉共用） ============ */
+.nav-group { margin-top: 10px; display: flex; flex-direction: column; gap: 2px; }
+.nav-group:first-child { margin-top: 2px; }
+.nav-group-title {
+  font-size: 11px; font-weight: 700; color: var(--text-3);
+  padding: 8px 12px 4px; letter-spacing: .5px;
+}
+
+/* ============ 手机端专属组件（桌面隐藏；手机媒体查询内再显示并定位） ============ */
+.hamburger { display: none; }
+.drawer-mask { display: none; }
+.drawer { display: none; }
+.fab-add { display: none; }
 
 /* ============ 手机适配（竖屏手机，≤720px）—— 参考「趣AI记账」布局 ============ */
 @media (max-width: 720px) {
@@ -401,7 +412,7 @@ body {
 
   /* 整体改为纵向排列 */
   .app { flex-direction: column; height: auto; min-height: 100vh; overflow: visible; }
-  .main { min-width: 0; padding-bottom: 78px; }   /* 给底部 Tab 留空间 */
+  .main { min-width: 0; padding-bottom: 92px; }   /* 给右下角悬浮新增按钮留空间 */
 
   /* ---- 顶栏：简洁标题栏（参考图顶部） ---- */
   .topbar {
@@ -501,36 +512,65 @@ body {
   /* 食材/调味料分列在手机上改单列 */
   .rows.cols { grid-template-columns: 1fr; }
 
-  /* ===== 底部 Tab 栏（完全匹配参考图底部导航风格） ===== */
-  .mobile-tabs {
-    display: flex; position: fixed; bottom: 0; left: 0; right: 0; z-index: 40;
-    background: rgba(255, 255, 255, .96);
-    -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
-    border-top: 1px solid rgba(244, 220, 232, .7);
-    padding: 5px 6px calc(5px + env(safe-area-inset-bottom));
-    box-shadow: 0 -4px 24px rgba(168, 125, 235, .12);
-  }
-  .m-tab {
-    flex: 1; border: none; background: transparent; cursor: pointer;
-    display: flex; flex-direction: column; align-items: center; gap: 2px;
-    padding: 5px 2px; color: var(--text-3); transition: all .18s;
-  }
-  .m-tab:active { transform: scale(.88); }
-  .m-tab-ico { font-size: 21px; line-height: 1.15; transition: transform .18s; }
-  .m-tab-label { font-size: 10.5px; font-weight: 600; }
-  .m-tab.active { color: var(--brand-2); }
-  .m-tab.active .m-tab-ico { transform: translateY(-2px) scale(1.08); }
-
-  /* 「新增」做成凸起的粉色圆形主按钮（参考图右下角 FAB） */
-  #mTabAdd .m-tab-ico {
-    background: linear-gradient(135deg, #ff6fa5 0%, #ff8db8 100%); color: #fff;
-    width: 46px; height: 46px; border-radius: 50%;
+  /* ===== 左上角汉堡菜单 + 左侧滑出功能抽屉（替换原底部 Tab） ===== */
+  .hamburger {
     display: flex; align-items: center; justify-content: center;
-    font-size: 26px; font-weight: 300;
-    box-shadow: 0 6px 20px rgba(255, 111, 165, .5), 0 2px 6px rgba(255, 111, 165, .3);
-    margin-top: -18px; border: 3px solid #fff;
+    width: 40px; height: 40px; flex: 0 0 40px;
+    border: 1px solid rgba(244, 220, 232, .9); border-radius: 12px;
+    background: rgba(255, 255, 255, .85); color: var(--brand-2);
+    font-size: 20px; cursor: pointer;
   }
-  #mTabAdd.active .m-tab-label { color: var(--pink-deep); }
+  .hamburger:active { transform: scale(.92); }
+
+  /* 抽屉遮罩 */
+  .drawer-mask {
+    display: block; position: fixed; inset: 0; z-index: 60;
+    background: rgba(60, 40, 80, .42);
+    opacity: 0; pointer-events: none; transition: opacity .25s;
+  }
+  .drawer-mask.open { opacity: 1; pointer-events: auto; }
+
+  /* 抽屉本体：从左侧滑出 */
+  .drawer {
+    display: flex; flex-direction: column;
+    position: fixed; top: 0; left: 0; bottom: 0; z-index: 70;
+    width: 84%; max-width: 320px;
+    background: linear-gradient(180deg, #ffffff 0%, #fff7fb 100%);
+    box-shadow: 4px 0 28px rgba(120, 90, 180, .28);
+    transform: translateX(-100%);
+    transition: transform .28s cubic-bezier(.4, 0, .2, 1);
+    padding: calc(14px + env(safe-area-inset-top)) 14px 14px;
+    overflow-y: auto;
+  }
+  .drawer.open { transform: translateX(0); }
+  .drawer-head { display: flex; align-items: center; gap: 10px; padding: 6px 4px 14px; }
+  .drawer-head .brand-avatar { width: 40px; height: 40px; font-size: 22px; border-radius: 12px; }
+  .drawer-title { flex: 1 1 auto; min-width: 0; }
+  .drawer-close {
+    flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%;
+    border: none; background: rgba(244, 220, 232, .5); color: var(--text-2);
+    font-size: 15px; cursor: pointer;
+  }
+  .drawer-nav { flex: 1 1 auto; }
+  .drawer .nav-group { margin-top: 6px; }
+  .drawer .nav-group-title { padding: 10px 6px 4px; }
+  .drawer .nav-item { padding: 13px 12px; font-size: 15px; border-radius: 12px; }
+  .drawer .nav-item.active { background: var(--brand-soft); color: var(--brand-2); font-weight: 600; }
+  .drawer-foot {
+    padding: 14px 6px 6px; border-top: 1px solid var(--border);
+    font-size: 11px; color: var(--text-3); line-height: 1.6;
+  }
+
+  /* 右下角悬浮新增按钮 */
+  .fab-add {
+    display: flex; align-items: center; justify-content: center;
+    position: fixed; right: 18px; bottom: calc(20px + env(safe-area-inset-bottom)); z-index: 50;
+    width: 56px; height: 56px; border-radius: 50%; border: 3px solid #fff;
+    background: linear-gradient(135deg, #ff6fa5 0%, #ff8db8 100%); color: #fff;
+    font-size: 30px; font-weight: 300; cursor: pointer;
+    box-shadow: 0 8px 22px rgba(255, 111, 165, .5);
+  }
+  .fab-add:active { transform: scale(.92); }
 
   /* 弹窗不要超出屏幕 */
   .modal-panel { max-width: 94vw; border-radius: 18px; }
