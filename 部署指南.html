@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>菜谱工作台 · 部署与同步说明书（看这一篇就够）</title>
+<style>
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; max-width: 760px; margin: 24px auto; padding: 0 18px; line-height: 1.8; color: #1f2328; }
+  h1 { font-size: 22px; border-bottom: 3px solid #2f80ed; padding-bottom: 8px; }
+  h2 { font-size: 18px; margin-top: 32px; color: #2f80ed; }
+  .step { background: #f6f8fa; border-left: 4px solid #2f80ed; padding: 12px 16px; margin: 14px 0; border-radius: 6px; }
+  .num { display: inline-block; background: #2f80ed; color: #fff; width: 24px; height: 24px; line-height: 24px; text-align: center; border-radius: 50%; margin-right: 8px; font-size: 14px; }
+  code { background: #eef1f4; padding: 1px 6px; border-radius: 4px; font-size: 14px; }
+  .warn { background: #fff4e5; border-left: 4px solid #f0a020; padding: 10px 14px; border-radius: 6px; margin: 14px 0; }
+  .ok { background: #e9f7ef; border-left: 4px solid #27ae60; padding: 10px 14px; border-radius: 6px; margin: 14px 0; }
+  b { color: #1f2328; }
+</style>
+</head>
+<body>
+
+<h1>菜谱工作台 · 部署与同步说明书</h1>
+<p>这篇只讲一件事：怎么把你这个菜谱应用放到网上，变成一个<b>永久网址</b>，并且<b>手机和电脑数据互通、不会丢</b>。全程不用打字命令，只在网页上点鼠标。</p>
+
+<div class="ok"><b>你只需要：</b>一个 GitHub 账号（你已有），和一个浏览器。电脑、手机都用同一个浏览器登录这个 GitHub 账号即可。</div>
+
+<h2>第一部分：把应用放到网上（拿永久链接）</h2>
+<p>在<b>电脑</b>上用浏览器做，只做一次。</p>
+
+<div class="step"><span class="num">1</span>打开 <code>github.com</code>，登录你的账号。</div>
+<div class="step"><span class="num">2</span>右上角点 <b>“+”</b>（加号）→ 选 <b>“New repository”</b>（新建仓库）。</div>
+<div class="step"><span class="num">3</span>在 “Repository name”（仓库名字）里填：<code>recipe-workbench</code><br>
+下面选 <b>“Private”</b>（私有，只有你能看，推荐）；想给别人看就选 “Public”。<br>
+其它都不用动，拉到最下面点 <b>“Create repository”</b>（创建仓库）。</div>
+<div class="step"><span class="num">4</span>创建好后，页面上会有一行蓝字 “<b>…or upload an existing file</b>”（或 “uploading an existing file”），点它。</div>
+<div class="step"><span class="num">5</span>把下面 <b>3 个文件</b>拖进虚线框（或点 “choose your files” 选）：<br>
+&nbsp;&nbsp;• <code>index.html</code><br>
+&nbsp;&nbsp;• <code>app.js</code><br>
+&nbsp;&nbsp;• <code>styles.css</code><br>
+如果还能看到一个叫 <code>.nojekyll</code> 的文件，也一起拖进去；看不到就不传。<br>
+<span class="warn">注意：<b>不要</b>传 <code>server.js</code> 这个文件。</span></div>
+<div class="step"><span class="num">6</span>拖完后，页面底部点 <b>“Commit changes”</b>（提交）。</div>
+<div class="step"><span class="num">7</span>在这个仓库页面，点右上角 <b>“Settings”</b>（设置）。</div>
+<div class="step"><span class="num">8</span>左边菜单点 <b>“Pages”</b>。</div>
+<div class="step"><span class="num">9</span>在 “Build and deployment” 下面：<br>
+&nbsp;&nbsp;• <b>Source</b>（来源）选 “<b>Deploy from a branch</b>”（从分支部署）<br>
+&nbsp;&nbsp;• <b>Branch</b>（分支）选 “<b>main</b>”，右边文件夹选 “<b>/ (root)</b>”，点 <b>“Save”</b>（保存）。</div>
+<div class="step"><span class="num">10</span>等 <b>1~2 分钟</b>。回到 “Pages” 页面，上面会出现一个网址，类似：<br>
+<code>https://你的用户名.github.io/recipe-workbench/</code><br>
+<b>这就是你的永久链接！</b> 建议收藏（加书签）。</div>
+
+<h2>第二部分：让数据自动保存 + 手机电脑通用</h2>
+<p>每台设备（电脑、手机）第一次用时做一遍。</p>
+
+<div class="step"><span class="num">11</span>还是在 GitHub，点右上角你的<b>头像</b> → <b>“Settings”</b>（设置）。</div>
+<div class="step"><span class="num">12</span>左边最下面点 <b>“Developer settings”</b>（开发者设置）。</div>
+<div class="step"><span class="num">13</span>点 <b>“Personal access tokens”</b> → <b>“Fine-grained tokens”</b>（精细令牌）。</div>
+<div class="step"><span class="num">14</span>点 <b>“Generate new token”</b>（生成新令牌）。</div>
+<div class="step"><span class="num">15</span>填写：<br>
+&nbsp;&nbsp;• <b>Token name</b>：填 <code>recipe-sync</code>（随便填也行）<br>
+&nbsp;&nbsp;• <b>Repository access</b>：选 “Only select repositories”，在下拉里选 <code>recipe-workbench</code><br>
+&nbsp;&nbsp;• 往下找 <b>Permissions</b> → <b>Repository permissions</b> → <b>Contents</b>：右边选 <b>“Read and write”</b>（读写）<br>
+&nbsp;&nbsp;• 拉到最下面点 <b>“Generate token”</b>。</div>
+<div class="step"><span class="num">16</span>生成后会出现一串字母（以 <code>github_pat_</code> 开头）。<br>
+<span class="warn"><b>立刻复制保存好！</b>这串字母只显示这一次，关掉就再也看不到了。</span></div>
+<div class="step"><span class="num">17</span>用浏览器打开你的永久链接（第 10 步那个网址）。</div>
+<div class="step"><span class="num">18</span>页面右上角点 <b>“☁ 同步”</b> 按钮。</div>
+<div class="step"><span class="num">19</span>在弹窗里填：<br>
+&nbsp;&nbsp;• <b>令牌</b>：粘贴第 16 步复制的那串<br>
+&nbsp;&nbsp;• <b>仓库</b>：填 <code>你的用户名/recipe-workbench</code>（中间是斜杠 <b>/</b>）<br>
+&nbsp;&nbsp;• <b>分支</b>：<code>main</code>（默认就是）<br>
+&nbsp;&nbsp;• <b>文件路径</b>：<code>data.json</code>（默认就是）<br>
+&nbsp;&nbsp;• 勾选 <b>“自动同步”</b></div>
+<div class="step"><span class="num">20</span>点 <b>“测试连接”</b>——如果显示绿色“连接成功”，再点 <b>“保存设置”</b>。</div>
+
+<h2>完成！以后怎么用</h2>
+<div class="ok">
+• 在电脑上添加/修改菜谱，<b>关掉网页也没事</b>，数据已自动存到网上。<br>
+• <b>手机</b>上用浏览器打开那个永久链接，点 “☁ 同步” 填<b>同样的令牌和仓库</b>，数据就和电脑一模一样了。<br>
+• 换手机/清了浏览器？重新点 “☁ 同步” 填一次即可。
+</div>
+
+<h2>常见问题</h2>
+<div class="warn">
+<b>测试连接失败？</b> 检查：① 仓库名是否写成 “用户名/recipe-workbench”；② 令牌是否复制完整（从头到尾）；③ 令牌权限是否是“读写”。<br><br>
+<b>网页打不开？</b> GitHub Pages 第一次要等 1~2 分钟，稍后再试。<br><br>
+<b>令牌安全吗？</b> 令牌只存在你自己的浏览器里，只对这个仓库有效，很安全。如果担心，随时去 “Fine-grained tokens” 里把它删掉重做一个。
+</div>
+
+<h2>第三部分：以后怎么更新功能 / 改代码</h2>
+<p><b>先放心：代码不会自己变。</b> GitHub Pages 只在你把新文件传上去时才更新，平时永远是上传的那个版本。</p>
+<div class="step"><span class="num">A</span><b>最省事（推荐）：你来说，我来改，你再传一次。</b><br>
+① 用大白话告诉帮你做应用的人想要什么新功能/改动；<br>
+② 对方在这个工作台改好、测好，把更新后的 <code>index.html / app.js / styles.css</code> 给你；<br>
+③ 你回到 GitHub 那个仓库，像第 5 步那样把新文件拖进去<b>覆盖旧的</b>（或点进旧文件 → 右上角铅笔图标 → 粘贴新内容 → 提交）；<br>
+④ 等 1~2 分钟，刷新永久链接即可看到新功能。</div>
+<div class="step"><span class="num">B</span><b>更省事：连上 GitHub，让对方直接帮你传。</b> 在 WorkBuddy 左侧连 GitHub 并授权后，对方改完可直接推送到网上，你连拖文件都不用。</div>
+<div class="ok">
+<b>两个放心：</b><br>
+• <b>菜谱数据不会丢</b>：数据存在通过令牌同步的 <code>data.json</code>，更新代码文件碰不到它。<br>
+• <b>改坏了也不怕</b>：GitHub 每次改动都有记录，可随时退回旧版本。
+</div>
+<p style="margin-top:28px;color:#888;font-size:13px;">本说明书可打印或存手机相册备查。遇到问题，把屏幕截图发给帮你做应用的人即可。</p>
+
+</body>
+</html>
