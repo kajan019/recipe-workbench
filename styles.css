@@ -538,25 +538,62 @@ body {
 .nut-calc-visual { min-width: 0; background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; }
 .nut-calc-cal { min-width: 0; }
 .nut-cal-legend { font-size: 13px; font-weight: 800; margin: 0 0 6px; text-align: left; }
+.nut-viz-focus { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-3, #8a7ca8); margin: 0 0 8px; }
+.nut-viz-focus button { margin-left: auto; }
 .nut-cal-card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; width: 100%; box-sizing: border-box; }
 .nut-cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
 .nut-cal-title { font-weight: 800; font-size: 14px; }
-.nut-cal-week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
-.nut-cal-week span { text-align: center; font-size: 11px; color: var(--text-3); padding: 1px 0; }
-.nut-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; width: 100%; box-sizing: border-box; }
-.nut-cal-cell { position: relative; aspect-ratio: 1 / 1; display: flex; align-items: center; justify-content: center; border-radius: 8px; background: var(--panel-2); font-size: 12px; cursor: pointer; transition: background .12s ease; }
-.nut-cal-cell.empty { background: transparent; cursor: default; }
-.nut-cal-cell.has-rec { background: var(--brand-soft); color: var(--brand-2); font-weight: 800; }
+.nut-cal-body { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px; width: 100%; min-width: 0; box-sizing: border-box; }
+.nut-cal-wd { text-align: center; font-size: 11px; color: var(--text-3); padding: 1px 0; }
+.nut-cal-cell { position: relative; aspect-ratio: 1 / 1; overflow: hidden; min-height: 0; display: flex; align-items: center; justify-content: center; border-radius: 8px; background: var(--panel-2); font-size: 12px; cursor: pointer; transition: background .12s ease; }
+.nut-cal-cell.empty { background: transparent; color: transparent; cursor: default; width: 100%; max-width: 100%; padding: 0; border: none; }
+.nut-cal-cell.has-rec { background: #6d28d9; color: #fff; font-weight: 800; }
 .nut-cal-cell.has-rec:hover { filter: brightness(1.03); }
-.nut-cal-cell.sel { box-shadow: 0 0 0 2px var(--brand) inset; }
-.nut-cal-cell:not(.empty):hover { background: var(--panel-3, #efe7f7); }
-.nut-cal-sticker {
-  position: absolute; top: -2px; right: -2px;
-  font-size: 11px; line-height: 1;
-}
+/* 当日：蓝紫色外框；选定日期：黄橙色外框（sel 在 today 之后，二者重叠时黄橙优先） */
+.nut-cal-cell.today { box-shadow: 0 0 0 2px #6366f1 inset; }
+.nut-cal-cell.sel { box-shadow: 0 0 0 2px #f59e0b inset; }
+.nut-cal-cell:not(.empty):not(.has-rec):hover { background: var(--panel-3, #efe7f7); }
+.nut-cal-cell.pending { background: #f3e8ff; color: var(--text-2); border: 1px dashed #a78bfa; }
+.nut-cal-cell.pending:hover { background: #ead9fb; }
 .nut-cal-hint { font-size: 11px; margin: 8px 2px 2px; text-align: center; }
 .nut-cal-daylist { margin-top: 12px; border-top: 1px dashed var(--border); padding-top: 10px; }
 .nut-cal-daytitle { font-size: 13px; margin: 0 0 8px; color: var(--text-2); }
+/* 当日合计热量（可点击展开营养三元素） */
+.nut-cal-daytotal { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; margin: 0 0 10px; background: var(--panel-2, #f3eefb); border: 1px solid var(--panel-3, #e3d8f4); border-radius: 10px; cursor: pointer; transition: background .12s ease; }
+.nut-cal-daytotal:hover { background: var(--panel-3, #e9def7); }
+.nut-cal-daytotal-k { font-size: 19px; font-weight: 800; color: #6d28d9; line-height: 1.1; }
+.nut-cal-daytotal-sub { font-size: 11px; color: var(--text-3, #8a7ca8); }
+.nut-cal-daymacros { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0 0 12px; }
+.nut-cal-daymacros .macro { background: var(--panel-2, #f3eefb); border-radius: 10px; padding: 8px 4px; text-align: center; }
+.nut-cal-daymacros .macro-v { font-size: 15px; font-weight: 800; }
+/* 日历当日记录头部 + 添加自定义记录按钮 */
+.nut-cal-dayhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 8px; }
+.nut-cal-dayhead .nut-cal-daytitle { margin: 0; }
+.nut-cal-add-custom { white-space: nowrap; }
+
+/* 自定义热量记录弹窗 */
+.nut-custom-modal { max-width: 460px; overflow: visible; }
+.nut-custom-modal .cc-head { display: grid; grid-template-columns: minmax(0, 1fr) 64px 84px 56px; gap: 6px; font-size: 11px; color: var(--text-3); padding: 0 2px 4px; }
+.nut-custom-modal .cc-head span:first-child { padding-left: 2px; }
+.nut-custom-modal .cc-rows { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.nut-custom-modal .cc-row { display: grid; grid-template-columns: minmax(0, 1fr) 64px 84px 56px; gap: 6px; align-items: center; position: relative; }
+.nut-custom-modal .cc-name-wrap { position: relative; min-width: 0; }
+.nut-custom-modal .cc-name { width: 100%; }
+.nut-custom-modal .cc-grams, .nut-custom-modal .cc-kcal { width: 100%; }
+.nut-custom-modal .cc-sug { position: absolute; top: 100%; left: 0; right: 0; z-index: 30; background: #fff; border: 1px solid var(--border); border-radius: 8px; max-height: 210px; overflow: auto; box-shadow: 0 8px 20px rgba(40, 20, 70, .16); margin-top: 2px; }
+.nut-custom-modal .cc-sug[hidden] { display: none; }
+.nut-custom-modal .cc-sug-item { display: flex; justify-content: space-between; align-items: center; width: 100%; text-align: left; padding: 7px 10px; border: none; background: transparent; cursor: pointer; font-size: 13px; color: var(--text); }
+.nut-custom-modal .cc-sug-item:hover { background: var(--panel-2, #f3eefb); }
+.nut-custom-modal .cc-sug-k { font-size: 11px; color: var(--text-3, #8a7ca8); }
+.nut-custom-modal .cc-ok { font-size: 12px; color: #16a34a; font-weight: 700; text-align: center; }
+.nut-custom-modal .cc-total { margin-top: 6px; font-size: 14px; }
+.nut-custom-modal .cc-total b { color: #6d28d9; font-size: 16px; }
+.nut-custom-modal .cc-tip { font-size: 11px; color: var(--text-3, #8a7ca8); margin-top: 6px; line-height: 1.5; }
+.nut-custom-modal .tiny.warn { background: #fff7ed; color: #c2410c; border-color: #fed7aa; }
+.nut-cal-daymacros .macro-l { font-size: 11px; color: var(--text-3, #8a7ca8); margin-top: 2px; }
+.nut-cal-daymacros .macro.p .macro-v { color: #7c3aed; }
+.nut-cal-daymacros .macro.f .macro-v { color: #f59e0b; }
+.nut-cal-daymacros .macro.c .macro-v { color: #22a06b; }
 /* Top3 来源弹窗 */
 .nut-top-list { display: grid; gap: 8px; margin: 6px 0 2px; }
 .nut-top-row { display: flex; align-items: center; gap: 10px; background: var(--panel-2); border-radius: 10px; padding: 9px 11px; }
@@ -565,7 +602,11 @@ body {
 .nut-top-val { font-weight: 700; color: var(--brand-2); }
 .nut-top-kcal { font-size: 12px; color: var(--text-3); }
 /* 记录 */
-.nut-rec-list { display: grid; gap: 10px; }
+.nut-rec-section { margin-top: 16px; }
+.nut-rec-toggle { display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
+.nut-rec-chevron { font-size: 12px; color: var(--text-3); transition: transform .15s ease; display: inline-block; }
+.nut-rec-section:not(.open) .nut-rec-chevron { transform: rotate(-90deg); }
+.nut-rec-list { display: grid; gap: 10px; margin-top: 10px; }
 .nut-rec { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; cursor: pointer; }
 .nut-rec.on { border-color: var(--brand); box-shadow: 0 0 0 2px var(--brand-soft); }
 .nut-rec-main { display: flex; align-items: baseline; justify-content: space-between; }
