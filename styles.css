@@ -388,6 +388,193 @@ body {
   padding: 8px 12px 4px; letter-spacing: .5px;
 }
 
+/* ============ 营养热量模块 ============ */
+.nut-tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+.nut-tab {
+  flex: 1; border: 1px solid var(--border); background: var(--panel); color: var(--text-2);
+  padding: 10px; border-radius: 12px; font-size: 14px; font-weight: 600; cursor: pointer;
+  transition: all .15s;
+}
+.nut-tab.active { background: var(--brand-soft); color: var(--brand-2); border-color: var(--brand); }
+.nut-sub { font-size: 14px; color: var(--text-2); margin: 18px 0 10px; }
+
+/* 子视图一：菜谱测算 */
+.nut-empty { text-align: center; padding: 30px 16px; color: var(--text-2); }
+.nut-empty .ico { font-size: 44px; margin-bottom: 10px; }
+.nut-pick-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.nut-pick {
+  border: 1px solid var(--border); background: var(--panel); border-radius: 14px;
+  padding: 14px; cursor: pointer; text-align: left; transition: all .15s;
+}
+.nut-pick:hover { border-color: var(--brand); box-shadow: var(--shadow); }
+.nut-pick-name { display: block; font-weight: 700; font-size: 15px; color: var(--text); }
+.nut-pick-meta { display: block; font-size: 12px; color: var(--text-3); margin-top: 4px; }
+
+.nut-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.nut-title { font-size: 18px; font-weight: 800; }
+.nut-ring { display: flex; justify-content: center; margin: 6px 0 4px; }
+.nut-ring-num { font-size: 26px; font-weight: 800; fill: var(--text); }
+.nut-ring-unit { font-size: 11px; fill: var(--text-3); }
+.nut-macros { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 6px 0 4px; }
+.macro { border-radius: 14px; padding: 12px 8px; text-align: center; }
+.macro.p { background: var(--brand-soft); color: var(--brand-2); }
+.macro.f { background: var(--pink-soft); color: var(--pink-deep); }
+.macro.c { background: var(--amber-soft); color: var(--amber); }
+.macro-v { font-size: 20px; font-weight: 800; }
+.macro-l { font-size: 11px; opacity: .9; margin-top: 2px; }
+
+.nut-row { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 11px 13px; margin-bottom: 10px; }
+.nut-row-top { display: flex; justify-content: space-between; font-weight: 600; font-size: 14px; }
+.nut-row-kcal { color: var(--brand-2); }
+.nut-row-sub { font-size: 12px; color: var(--text-3); margin: 2px 0 8px; }
+.nut-bars { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.nut-bar { font-size: 11px; color: #fff; padding: 3px 8px; border-radius: 999px; min-width: 40px; text-align: center; }
+.nut-bar.p { background: var(--brand); }
+.nut-bar.f { background: var(--pink-deep); }
+.nut-bar.c { background: var(--amber); }
+.nut-warn { background: var(--amber-soft); border: 1px solid #f3d3a8; border-radius: 14px; padding: 12px 14px; margin-top: 14px; font-size: 13px; color: #8a5a16; }
+.nut-warn-list { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+.nut-pending { background: #eef4ff; border: 1px solid #d4e2ff; border-radius: 14px; padding: 10px 14px; margin-top: 12px; font-size: 12.5px; color: #3a5a9a; }
+
+/* 子视图二：食物营养库 */
+.nut-searchbar { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+.nut-searchbar .search-ico { font-size: 15px; color: var(--text-3); }
+.nut-searchbar .search-box { flex: 1; }
+.nut-food-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.nut-food {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  padding: 13px 15px; cursor: pointer; transition: all .15s;
+}
+.nut-food:hover { border-color: var(--brand); box-shadow: var(--shadow); }
+.nut-food-name { font-weight: 700; font-size: 15px; color: var(--text); }
+.nut-food-kcal { font-size: 18px; font-weight: 800; color: var(--brand-2); margin: 4px 0 6px; }
+.nut-food-kcal small { font-size: 11px; font-weight: 500; color: var(--text-3); }
+.nut-food-macros { display: flex; flex-wrap: wrap; gap: 6px; }
+.macro-t { font-size: 11px; padding: 2px 8px; border-radius: 999px; }
+.macro-t.p { background: var(--brand-soft); color: var(--brand-2); }
+.macro-t.f { background: var(--pink-soft); color: var(--pink-deep); }
+.macro-t.c { background: var(--amber-soft); color: var(--amber); }
+.nut-tip { font-size: 12px; margin-top: 14px; }
+
+/* 营养库编辑弹窗 */
+.nut-food-modal { max-width: 440px; }
+.field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0; }
+.field-grid .field-label { font-size: 12px; }
+
+/* ============ 各模块独立搜索栏 ============ */
+.mod-searchbar { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+.mod-searchbar .search-ico { font-size: 15px; color: var(--text-3); }
+.mod-searchbar .search-box { flex: 1; }
+.mod-search-clear { border: none; background: var(--panel-2); color: var(--text-3); width: 28px; height: 28px; border-radius: 50%; cursor: pointer; font-size: 13px; }
+.mod-search-clear:hover { background: var(--border); color: var(--text); }
+
+/* ============ 营养测算：多选 / 份数 / 记录 ============ */
+.nut-select-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.nut-select-acts { display: flex; align-items: center; gap: 8px; }
+.nut-sel-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin-bottom: 18px; }
+.nut-sel { display: flex; flex-direction: column; align-items: stretch; gap: 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 11px 13px; }
+.nut-sel.on { border-color: var(--brand); box-shadow: 0 0 0 2px var(--brand-soft); }
+.nut-sel-label { display: flex; align-items: center; gap: 9px; cursor: pointer; }
+.nut-sel-cover { width: 36px; height: 36px; border-radius: 9px; border: 1px solid var(--border); background-size: cover; background-position: center; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; font-size: 17px; background-color: var(--panel-2); }
+.nut-sel-cover.no-img { color: var(--text-3); }
+.nut-sel-name { font-weight: 600; font-size: 14px; color: var(--text); }
+.nut-sel-serv { font-size: 12px; color: var(--text-2); display: flex; align-items: center; gap: 4px; }
+.nut-serv { width: 56px; border: 1px solid var(--border-strong); border-radius: 7px; padding: 4px 6px; font-size: 13px; font-family: inherit; text-align: center; }
+.nut-extra { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 4px; }
+.nut-extra .ne { font-size: 12px; padding: 5px 10px; border-radius: 999px; font-weight: 600; }
+.nut-extra .ne.sugar { background: #fff0f5; color: #d6489a; }
+.nut-extra .ne.sodium { background: #fff4e0; color: #c47f12; }
+.nut-extra .ne.fiber { background: #eafaf0; color: #1f9d57; }
+.nut-ov { display: inline-flex; align-items: center; gap: 4px; background: #fff; border: 1px solid var(--border); border-radius: 999px; padding: 3px 8px; font-size: 12px; }
+.nut-ov-name { font-weight: 600; }
+.nut-ov-input { width: 52px; border: none; border-bottom: 1px solid var(--border-strong); font-size: 12px; padding: 2px 3px; text-align: center; font-family: inherit; }
+/* 基准食材缩放（替代份数） */
+.nut-scale { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; background: var(--panel-2); border-radius: 10px; padding: 8px 10px; font-size: 12px; }
+.nut-scale-label { font-weight: 700; color: var(--text-2); }
+.nut-scale-eq { color: var(--text-3); }
+.nut-scale-eq.dim { font-size: 11px; }
+.nut-scale select, .nut-scale input { padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); font-size: 12px; font-family: inherit; }
+.nut-scale .nut-scale-amt { width: 72px; }
+.nut-scale-hint { font-size: 12px; color: var(--text-3); }
+/* 未记录用量的食材：下拉框 + 手动填写 */
+.nut-imp { background: var(--panel-2); border-radius: 10px; padding: 8px 10px; }
+.nut-imp-title { font-size: 12px; color: var(--text-2); margin-bottom: 6px; font-weight: 600; }
+.nut-imp-bar { margin-bottom: 6px; }
+.nut-imp-select { width: 100%; padding: 5px 7px; border: 1px solid var(--border); border-radius: 7px; background: var(--panel); color: var(--text); font-size: 13px; font-family: inherit; }
+.nut-imp-rows { display: grid; gap: 6px; }
+.nut-imp-row { display: flex; align-items: center; gap: 6px; }
+.nut-imp-name { flex: 1; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nut-imp-amt { width: 74px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; font-family: inherit; font-size: 13px; }
+.nut-imp-unit { padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); font-size: 13px; font-family: inherit; }
+.nut-imp-del { border: none; background: transparent; color: var(--text-3); font-size: 17px; cursor: pointer; padding: 0 4px; line-height: 1; }
+.nut-imp-del:hover { color: #d6453b; }
+/* 宏量元素可点击查看 Top3 */
+.macro.clickable { cursor: pointer; transition: transform .08s ease; }
+.macro.clickable:active { transform: scale(.97); }
+.macro.clickable:hover { filter: brightness(1.02); }
+/* 展开指示箭头（未展开▾ / 已展开▴） */
+.macro.clickable::after { content: '▾'; display: block; font-size: 11px; line-height: 1; margin-top: 5px; opacity: .5; }
+.macro.clickable.open::after { content: '▴'; opacity: .95; }
+.macro.clickable.open { box-shadow: 0 0 0 2px var(--brand) inset; }
+.macro.p.open { box-shadow: 0 0 0 2px var(--brand-2) inset; }
+.macro.f.open { box-shadow: 0 0 0 2px var(--pink-deep) inset; }
+.macro.c.open { box-shadow: 0 0 0 2px var(--amber) inset; }
+.macro-hint { font-size: 12px; color: var(--text-3); margin: 4px 0 2px; text-align: center; }
+/* 内联展开的来源 Top3（在对应元素下方，不弹窗） */
+.macro-top3-wrap { margin: 2px 0 2px; }
+.macro-top3 { margin: 2px 0; padding: 8px 10px; background: var(--panel-2); border-radius: 12px; }
+.macro-top3[hidden] { display: none; }
+.macro-top3-head { font-size: 12px; font-weight: 700; color: var(--text-3); margin: 2px 0 4px; }
+/* 营养日历：左右分栏 */
+.nut-split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+.nut-split-left, .nut-split-right { min-width: 0; }
+.nut-split-title { font-size: 15px; font-weight: 800; margin: 2px 0 8px; }
+.nut-cal-card { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 12px 14px; }
+.nut-cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.nut-cal-title { font-weight: 800; font-size: 15px; }
+.nut-cal-week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 4px; }
+.nut-cal-week span { text-align: center; font-size: 11px; color: var(--text-3); padding: 2px 0; }
+.nut-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.nut-cal-cell { position: relative; aspect-ratio: 1 / 1; display: flex; align-items: center; justify-content: center; border-radius: 10px; background: var(--panel-2); font-size: 13px; cursor: pointer; transition: background .12s ease; }
+.nut-cal-cell.empty { background: transparent; cursor: default; }
+.nut-cal-cell.has-rec { background: var(--brand-soft); color: var(--brand-2); font-weight: 800; }
+.nut-cal-cell.has-rec:hover { filter: brightness(1.03); }
+.nut-cal-cell.sel { box-shadow: 0 0 0 2px var(--brand) inset; }
+.nut-cal-cell:not(.empty):hover { background: var(--panel-3, #efe7f7); }
+.nut-cal-dot { position: absolute; right: 6px; bottom: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--brand); }
+.nut-cal-hint { font-size: 12px; margin: 10px 2px 2px; }
+.nut-cal-daylist { margin-top: 12px; border-top: 1px dashed var(--border); padding-top: 10px; }
+.nut-cal-daytitle { font-size: 13px; margin: 0 0 8px; color: var(--text-2); }
+/* Top3 来源弹窗 */
+.nut-top-list { display: grid; gap: 8px; margin: 6px 0 2px; }
+.nut-top-row { display: flex; align-items: center; gap: 10px; background: var(--panel-2); border-radius: 10px; padding: 9px 11px; }
+.nut-top-rank { width: 22px; height: 22px; border-radius: 50%; background: var(--brand); color: #fff; font-weight: 800; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+.nut-top-name { flex: 1; font-weight: 600; font-size: 14px; }
+.nut-top-val { font-weight: 700; color: var(--brand-2); }
+.nut-top-kcal { font-size: 12px; color: var(--text-3); }
+/* 记录 */
+.nut-rec-list { display: grid; gap: 10px; }
+.nut-rec { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; cursor: pointer; }
+.nut-rec.on { border-color: var(--brand); box-shadow: 0 0 0 2px var(--brand-soft); }
+.nut-rec-main { display: flex; align-items: baseline; justify-content: space-between; }
+.nut-rec-k { font-size: 18px; font-weight: 800; color: var(--brand-2); }
+.nut-rec-t { font-size: 12px; color: var(--text-3); }
+.nut-rec-sub { font-size: 13px; color: var(--text-2); margin: 3px 0 6px; }
+.nut-rec-acts { display: flex; gap: 10px; }
+.nut-rec-detail { background: linear-gradient(135deg, #f3e9ff 0%, #ffe7f3 100%); border-radius: 16px; padding: 16px; margin: 14px 0; }
+.nut-rec-detail-head { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--text-2); margin-bottom: 6px; }
+.nut-rec-kcal { font-size: 30px; font-weight: 900; color: var(--text); }
+.nut-rec-rows { display: grid; gap: 4px; margin: 10px 0; font-size: 13px; color: var(--text-2); }
+.nut-rec-recipes { font-size: 12px; color: var(--text-3); }
+
+/* ============ 营养库批量导入弹窗 ============ */
+.modal-hint { font-size: 12.5px; color: var(--text-2); line-height: 1.7; margin: 4px 0 12px; }
+.modal-hint code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+.import-file-row { margin: 8px 0; }
+.import-file-row input[type=file] { font-size: 13px; }
+.import-msg { font-size: 12.5px; min-height: 16px; margin: 6px 0; }
+.import-err { color: var(--red); }
+
 /* ============ 手机端专属组件（桌面隐藏；手机媒体查询内再显示并定位） ============ */
 .hamburger { display: none; }
 .drawer-mask { display: none; }
@@ -406,6 +593,7 @@ body {
     background-position: 0 0, 14px 7px;
     background-color: #fff6f9;
   }
+  .nut-split { grid-template-columns: 1fr; gap: 12px; }
 
   /* 隐藏桌面左侧导航 */
   .sidebar { display: none; }
@@ -599,6 +787,19 @@ body {
 
   /* 筛选面板 */
   .filter-bar { border-radius: 18px; }
+
+  /* ===== 营养热量模块（手机适配） ===== */
+  .nut-tabs { gap: 6px; }
+  .nut-tab { flex: 1; padding: 9px 4px; font-size: 13px; border-radius: 999px; }
+  .nut-pick-list { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .nut-pick { padding: 14px 12px; border-radius: 16px; }
+  .nut-ring svg { width: 140px; height: 140px; }
+  .nut-macros { gap: 8px; }
+  .macro { padding: 12px 6px; border-radius: 16px; }
+  .nut-food-list { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .nut-food { padding: 12px 13px; border-radius: 16px; }
+  .nut-row { border-radius: 16px; }
+  .nut-warn { border-radius: 16px; }
 
   /* Toast 位置避开底部 Tab */
   .toast { bottom: 90px; }

@@ -246,9 +246,175 @@ let state = {
   purchaseMergeSrc: null,
   filter: { cat: [], cook: [] },
   search: '',
+  favSearch: '',
+  purchaseSearch: '',
+  filterSearch: '',
   collections: [],
+  nutfoods: [],      // 食物营养库：每 100g 的热量(kcal)/蛋白(g)/脂肪(g)/碳水(g)/糖/盐/纤维
+  nutView: 'calc',   // nutrition 子视图：calc=菜谱测算 / lib=食物营养库
+  nutSelRecipes: [], // 营养测算：选中的菜谱 id（多选共同参与计算）
+  nutScale: {},      // recipeId -> { base: 食材id, amount: 实际用量, unit:'g'|'ml' }（基准食材缩放，替代份数）
+  nutManual: {},     // "recipeId::name" -> { amt: 用量, unit:'g'|'ml' }（未记录准确用量的食材手动填写）
+  nutRecords: [],    // 热量记录
+  nutRecView: null,  // 当前查看的记录 id
 };
 let dragSrc = null;
+let nutAgg = null;       // 最近一次营养聚合结果（供点击宏量元素查看 Top3 来源）
+
+/* 内置常见食材营养（每 100g）：热量kcal / 蛋白质g / 脂肪g / 碳水g */
+const NUT_SEED = [
+  { name: '鸡胸肉', kcal: 133, protein: 19.4, fat: 5, carb: 2.5, fiber: 0 },
+  { name: '西兰花', kcal: 34, protein: 4.1, fat: 0.6, carb: 4.3, fiber: 2.6 },
+  { name: '番茄', kcal: 18, protein: 0.9, fat: 0.2, carb: 3.9, sugar: 2.6, fiber: 1.2 },
+  { name: '鸡蛋', kcal: 144, protein: 13.3, fat: 8.8, carb: 2.8, sodium: 131 },
+  { name: '牛肉(瘦)', kcal: 106, protein: 20.2, fat: 2.3, carb: 1.2, sodium: 55 },
+  { name: '猪里脊', kcal: 155, protein: 20.2, fat: 7.9, carb: 0.7, sodium: 43 },
+  { name: '米饭(熟)', kcal: 116, protein: 2.6, fat: 0.3, carb: 25.9, sugar: 0.3, fiber: 0.3 },
+  { name: '面条(熟)', kcal: 110, protein: 3.6, fat: 0.4, carb: 22.4, fiber: 1.2 },
+  { name: '土豆', kcal: 77, protein: 2.0, fat: 0.2, carb: 17.2, fiber: 2.2 },
+  { name: '胡萝卜', kcal: 41, protein: 1.0, fat: 0.2, carb: 9.6, sugar: 4.7, fiber: 2.8 },
+  { name: '黄瓜', kcal: 16, protein: 0.8, fat: 0.2, carb: 2.9, fiber: 0.5 },
+  { name: '豆腐', kcal: 76, protein: 8.1, fat: 4.8, carb: 1.9, sodium: 7, fiber: 0.4 },
+  { name: '牛奶', kcal: 54, protein: 3.0, fat: 3.2, carb: 3.4, sugar: 4.8, sodium: 43, fiber: 0 },
+  { name: '虾', kcal: 93, protein: 18.6, fat: 0.8, carb: 2.8, sodium: 165 },
+  { name: '三文鱼', kcal: 139, protein: 17.2, fat: 7.8, carb: 0, sodium: 59, fiber: 0 },
+  { name: '燕麦', kcal: 367, protein: 15, fat: 6.7, carb: 61, fiber: 10.6 },
+  { name: '香蕉', kcal: 89, protein: 1.1, fat: 0.3, carb: 22.8, sugar: 12.2, fiber: 2.6 },
+  { name: '苹果', kcal: 52, protein: 0.3, fat: 0.2, carb: 13.8, sugar: 10.4, fiber: 2.4 },
+  { name: '食用油', kcal: 899, protein: 0, fat: 99.9, carb: 0, sodium: 0 },
+  { name: '白糖', kcal: 387, protein: 0, fat: 0, carb: 99.9, sugar: 99.9 },
+  { name: '生抽', kcal: 20, protein: 2.2, fat: 0.1, carb: 3.0, sodium: 638, fiber: 0.2 },
+  { name: '盐', kcal: 0, protein: 0, fat: 0, carb: 0, sodium: 38758 },
+  /* ===== 扩展库（常见家常食材，每 100g 参考值；同名食材用户改过的不覆盖） ===== */
+  /* 蔬菜 */
+  { name: '白菜', kcal: 17, protein: 1.5, fat: 0.1, carb: 3.2 },
+  { name: '菠菜', kcal: 28, protein: 2.6, fat: 0.3, carb: 4.5, fiber: 2.2 },
+  { name: '生菜', kcal: 15, protein: 1.4, fat: 0.2, carb: 2.9 },
+  { name: '油麦菜', kcal: 15, protein: 1.4, fat: 0.2, carb: 2.9 },
+  { name: '芹菜', kcal: 17, protein: 0.7, fat: 0.2, carb: 3.9 },
+  { name: '韭菜', kcal: 29, protein: 2.4, fat: 0.4, carb: 4.6 },
+  { name: '青椒', kcal: 22, protein: 1.0, fat: 0.2, carb: 5.4 },
+  { name: '红椒', kcal: 31, protein: 1.0, fat: 0.3, carb: 6.0 },
+  { name: '彩椒', kcal: 26, protein: 1.0, fat: 0.2, carb: 5.5 },
+  { name: '茄子', kcal: 25, protein: 1.0, fat: 0.2, carb: 5.2 },
+  { name: '洋葱', kcal: 40, protein: 1.1, fat: 0.1, carb: 9.3 },
+  { name: '大葱', kcal: 30, protein: 1.7, fat: 0.3, carb: 6.5 },
+  { name: '小葱', kcal: 27, protein: 1.8, fat: 0.2, carb: 5.0 },
+  { name: '姜', kcal: 41, protein: 1.8, fat: 0.8, carb: 8.0 },
+  { name: '蒜', kcal: 149, protein: 6.4, fat: 0.5, carb: 33 },
+  { name: '冬瓜', kcal: 12, protein: 0.4, fat: 0.2, carb: 2.6 },
+  { name: '南瓜', kcal: 26, protein: 1.0, fat: 0.1, carb: 6.5 },
+  { name: '西葫芦', kcal: 18, protein: 1.0, fat: 0.2, carb: 3.5 },
+  { name: '苦瓜', kcal: 19, protein: 1.0, fat: 0.2, carb: 4.0 },
+  { name: '莲藕', kcal: 74, protein: 2.6, fat: 0.1, carb: 17.2 },
+  { name: '莴笋', kcal: 15, protein: 1.0, fat: 0.1, carb: 3.0 },
+  { name: '香菇', kcal: 26, protein: 2.2, fat: 0.3, carb: 5.2 },
+  { name: '金针菇', kcal: 32, protein: 2.4, fat: 0.4, carb: 6.0 },
+  { name: '平菇', kcal: 24, protein: 1.9, fat: 0.3, carb: 4.6 },
+  { name: '杏鲍菇', kcal: 31, protein: 2.1, fat: 0.2, carb: 6.0 },
+  { name: '木耳', kcal: 265, protein: 12, fat: 1.5, carb: 65, fiber: 29 },
+  { name: '海带', kcal: 13, protein: 1.2, fat: 0.1, carb: 2.5 },
+  /* 肉禽 */
+  { name: '鸡腿肉', kcal: 119, protein: 19, fat: 4.4, carb: 0 },
+  { name: '鸡翅', kcal: 194, protein: 17, fat: 13, carb: 0 },
+  { name: '五花肉', kcal: 508, protein: 7.7, fat: 50, carb: 0 },
+  { name: '排骨', kcal: 264, protein: 18, fat: 20, carb: 0 },
+  { name: '牛腩', kcal: 332, protein: 17, fat: 28, carb: 0 },
+  { name: '羊肉', kcal: 118, protein: 20, fat: 3.9, carb: 0 },
+  { name: '鸭肉', kcal: 240, protein: 15, fat: 19, carb: 0 },
+  { name: '猪肝', kcal: 129, protein: 19.3, fat: 3.5, carb: 5 },
+  { name: '午餐肉', kcal: 229, protein: 9, fat: 15, carb: 15 },
+  /* 蛋 */
+  { name: '鸭蛋', kcal: 180, protein: 12.6, fat: 13, carb: 1.4 },
+  { name: '皮蛋', kcal: 171, protein: 12.6, fat: 10, carb: 4 },
+  { name: '鹌鹑蛋', kcal: 160, protein: 12.8, fat: 11, carb: 2.5 },
+  /* 水产 */
+  { name: '鲫鱼', kcal: 108, protein: 17, fat: 4, carb: 0 },
+  { name: '鲈鱼', kcal: 105, protein: 18.6, fat: 3, carb: 0 },
+  { name: '带鱼', kcal: 127, protein: 17.7, fat: 4.9, carb: 0 },
+  { name: '金枪鱼', kcal: 132, protein: 28, fat: 1, carb: 0 },
+  { name: '螃蟹', kcal: 95, protein: 17, fat: 2, carb: 0 },
+  { name: '扇贝', kcal: 60, protein: 11, fat: 0.6, carb: 2.5 },
+  { name: '鱿鱼', kcal: 92, protein: 15.6, fat: 1.5, carb: 3 },
+  { name: '虾仁', kcal: 99, protein: 18, fat: 1.5, carb: 0 },
+  { name: '牡蛎', kcal: 73, protein: 9, fat: 2, carb: 4 },
+  /* 主食杂粮 */
+  { name: '馒头', kcal: 223, protein: 7, fat: 1.1, carb: 47 },
+  { name: '面包', kcal: 265, protein: 9, fat: 5, carb: 49 },
+  { name: '白粥', kcal: 46, protein: 1.1, fat: 0.3, carb: 10 },
+  { name: '玉米', kcal: 106, protein: 4, fat: 1.2, carb: 22 },
+  { name: '红薯', kcal: 99, protein: 1.1, fat: 0.2, carb: 24, fiber: 3 },
+  { name: '紫薯', kcal: 106, protein: 1.9, fat: 0.2, carb: 25 },
+  { name: '山药', kcal: 57, protein: 1.9, fat: 0.2, carb: 13 },
+  { name: '芋头', kcal: 79, protein: 2.2, fat: 0.2, carb: 18 },
+  { name: '小米', kcal: 361, protein: 9, fat: 3.1, carb: 73 },
+  { name: '糙米', kcal: 368, protein: 7.2, fat: 2.9, carb: 76 },
+  { name: '绿豆', kcal: 347, protein: 21, fat: 0.8, carb: 62 },
+  { name: '红豆', kcal: 324, protein: 20, fat: 0.6, carb: 63 },
+  { name: '薏米', kcal: 357, protein: 12, fat: 2, carb: 71 },
+  { name: '荞麦', kcal: 337, protein: 9, fat: 2.3, carb: 66 },
+  { name: '饺子皮', kcal: 280, protein: 9, fat: 1, carb: 58 },
+  { name: '面条', kcal: 355, protein: 11, fat: 1, carb: 75 },
+  /* 豆制品 */
+  { name: '豆浆', kcal: 31, protein: 3, fat: 1.6, carb: 1.2 },
+  { name: '豆干', kcal: 140, protein: 16, fat: 7, carb: 4 },
+  { name: '腐竹', kcal: 459, protein: 44, fat: 21, carb: 22 },
+  { name: '千张', kcal: 260, protein: 24, fat: 16, carb: 5 },
+  { name: '黄豆', kcal: 390, protein: 35, fat: 16, carb: 34 },
+  { name: '毛豆', kcal: 131, protein: 13, fat: 5, carb: 11 },
+  { name: '豆芽', kcal: 47, protein: 4.5, fat: 1.6, carb: 4.5 },
+  { name: '内酯豆腐', kcal: 49, protein: 5, fat: 1.9, carb: 2.9 },
+  /* 奶制品 */
+  { name: '酸奶', kcal: 72, protein: 3.2, fat: 2.9, carb: 9 },
+  { name: '奶酪', kcal: 328, protein: 25, fat: 24, carb: 3 },
+  { name: '黄油', kcal: 717, protein: 0.9, fat: 81, carb: 0.1 },
+  { name: '淡奶油', kcal: 340, protein: 2, fat: 35, carb: 3 },
+  { name: '炼乳', kcal: 331, protein: 8, fat: 8, carb: 54 },
+  /* 水果 */
+  { name: '橙子', kcal: 47, protein: 0.9, fat: 0.1, carb: 12, sugar: 9 },
+  { name: '梨', kcal: 44, protein: 0.4, fat: 0.1, carb: 13, sugar: 9 },
+  { name: '葡萄', kcal: 43, protein: 0.5, fat: 0.2, carb: 10, sugar: 10 },
+  { name: '西瓜', kcal: 30, protein: 0.6, fat: 0.1, carb: 7.6, sugar: 6.4 },
+  { name: '草莓', kcal: 32, protein: 1.0, fat: 0.2, carb: 7.1, sugar: 4.9 },
+  { name: '猕猴桃', kcal: 61, protein: 1.1, fat: 0.5, carb: 14, sugar: 9 },
+  { name: '桃子', kcal: 39, protein: 0.9, fat: 0.1, carb: 9.5, sugar: 8 },
+  { name: '芒果', kcal: 60, protein: 0.8, fat: 0.4, carb: 15, sugar: 14 },
+  { name: '蓝莓', kcal: 57, protein: 0.7, fat: 0.3, carb: 14, sugar: 10 },
+  { name: '菠萝', kcal: 50, protein: 0.5, fat: 0.1, carb: 12, sugar: 10 },
+  { name: '柠檬', kcal: 29, protein: 1.1, fat: 0.3, carb: 9, sugar: 2.5 },
+  { name: '柚子', kcal: 41, protein: 0.8, fat: 0.2, carb: 9.5, sugar: 8 },
+  /* 坚果 / 油脂 / 糖 / 调料 */
+  { name: '花生', kcal: 567, protein: 25, fat: 49, carb: 16 },
+  { name: '核桃', kcal: 654, protein: 15, fat: 65, carb: 14 },
+  { name: '杏仁', kcal: 579, protein: 21, fat: 50, carb: 22 },
+  { name: '腰果', kcal: 553, protein: 18, fat: 44, carb: 30 },
+  { name: '瓜子', kcal: 608, protein: 28, fat: 48, carb: 18 },
+  { name: '芝麻', kcal: 631, protein: 18, fat: 53, carb: 24 },
+  { name: '蜂蜜', kcal: 304, protein: 0.3, fat: 0, carb: 82, sugar: 82 },
+  { name: '红糖', kcal: 389, protein: 0.7, fat: 0, carb: 96, sugar: 96 },
+  { name: '冰糖', kcal: 400, protein: 0, fat: 0, carb: 100, sugar: 100 },
+  { name: '老抽', kcal: 119, protein: 6, fat: 0.1, carb: 20 },
+  { name: '醋', kcal: 31, protein: 0.5, fat: 0, carb: 4.9 },
+  { name: '蚝油', kcal: 112, protein: 3.5, fat: 0.1, carb: 22 },
+  { name: '料酒', kcal: 100, protein: 0.2, fat: 0, carb: 4 },
+  { name: '番茄酱', kcal: 82, protein: 1.2, fat: 0.2, carb: 19, sugar: 15 },
+  { name: '沙拉酱', kcal: 380, protein: 1.2, fat: 38, carb: 8 },
+  { name: '辣椒酱', kcal: 100, protein: 3, fat: 3, carb: 12 },
+  { name: '豆瓣酱', kcal: 178, protein: 7, fat: 6, carb: 22 },
+  { name: '咖喱块', kcal: 450, protein: 6, fat: 30, carb: 40 },
+  { name: '芝麻酱', kcal: 618, protein: 19, fat: 53, carb: 22 },
+  { name: '花生酱', kcal: 588, protein: 25, fat: 50, carb: 20 },
+  { name: '巧克力', kcal: 546, protein: 4.9, fat: 31, carb: 61, sugar: 50 },
+];
+/* 厨房单位 → 克 的粗略换算（体积勺按用户给定值：铁勺5 / 瓷勺12 / 茶勺1 克或毫升） */
+const UNIT_TO_G = { 'g': 1, 'ml': 1, 'kg': 1000, '公斤': 1000, '斤': 500, '颗': 200, '个': 150, '只': 150, '根': 100, '片': 30, '块': 80, '把': 50, '勺': 12, '铁勺': 5, '瓷勺': 12, '茶勺': 1, '汤匙': 12, '茶匙': 1, '滴': 0.05 };
+function unitToGrams(amount, unit) {
+  if (amount == null || isNaN(amount)) return null;     // 适量
+  const u = UNIT_ALIAS[unit] || unit;
+  const factor = UNIT_TO_G[u];
+  if (!factor) return null;                              // 未知单位无法折算
+  return Math.round(amount * factor * 100) / 100;
+}
 
 function load() {
   try {
@@ -261,7 +427,10 @@ function load() {
       } else {
         state.recipes = (parsed.recipes || []).map(migrateRecipe);
         state.collections = (parsed.collections || []).map(migrateCollection);
+        if (Array.isArray(parsed.nutfoods)) state.nutfoods = parsed.nutfoods.map(migrateNutFood);
+        if (Array.isArray(parsed.nutRecords)) state.nutRecords = parsed.nutRecords.map(migrateNutRecord);
       }
+      mergeNutSeed();
       return;
     }
   } catch (e) { console.warn('读取本地数据失败', e); }
@@ -296,8 +465,44 @@ function migrateCollection(c) {
     converted: !!c.converted,
   };
 }
+function blankNutFood() { return { id: uid(), name: '', kcal: '', protein: '', fat: '', carb: '', sugar: '', sodium: '', fiber: '', per: 100 }; }
+/* 把 NUT_SEED 里「用户库还没有」的食材补进营养库（同名不覆盖、不动用户已改的数据） */
+function mergeNutSeed() {
+  if (!Array.isArray(state.nutfoods)) state.nutfoods = [];
+  NUT_SEED.forEach(s => {
+    if (!s || !s.name) return;
+    const n = norm(s.name);
+    if (!state.nutfoods.some(f => f && f.name && norm(f.name) === n)) {
+      state.nutfoods.push(Object.assign(blankNutFood(), s));
+    }
+  });
+}
+function migrateNutFood(f) {
+  return {
+    id: f.id || uid(),
+    name: f.name || '',
+    kcal: f.kcal != null ? f.kcal : '',
+    protein: f.protein != null ? f.protein : '',
+    fat: f.fat != null ? f.fat : '',
+    carb: f.carb != null ? f.carb : '',
+    sugar: f.sugar != null ? f.sugar : '',
+    sodium: f.sodium != null ? f.sodium : '',
+    fiber: f.fiber != null ? f.fiber : '',
+    per: f.per || 100,
+  };
+}
+function migrateNutRecord(r) {
+  return {
+    id: r.id || uid(),
+    createdAt: r.createdAt || Date.now(),
+    date: r.date || null,
+    recipes: Array.isArray(r.recipes) ? r.recipes.map(x => ({ id: x.id, name: x.name || '', servings: x.servings != null ? x.servings : 1, factor: x.factor != null ? x.factor : 1 })) : [],
+    total: r.total || { kcal: 0, protein: 0, fat: 0, carb: 0, sugar: 0, sodium: 0, fiber: 0 },
+    rows: Array.isArray(r.rows) ? r.rows : [],
+  };
+}
 function save() {
-  try { localStorage.setItem(STORE_KEY, JSON.stringify({ recipes: state.recipes, collections: state.collections })); }
+  try { localStorage.setItem(STORE_KEY, JSON.stringify({ recipes: state.recipes, collections: state.collections, nutfoods: state.nutfoods, nutRecords: state.nutRecords })); }
   catch (e) { toast('保存失败：本地存储空间可能已满（图片过多）'); }
   scheduleSync();
 }
@@ -327,7 +532,7 @@ async function githubApi(path, opts) {
 async function githubPush() {
   if (!syncEnabled()) return false;
   const cfg = getSyncCfg();
-  const payload = JSON.stringify({ recipes: state.recipes, collections: state.collections });
+  const payload = JSON.stringify({ recipes: state.recipes, collections: state.collections, nutfoods: state.nutfoods, nutRecords: state.nutRecords });
   const apiPath = '/contents/' + syncPath(cfg) + '?ref=' + syncBranch(cfg);
   let sha = null;
   try { const r = await githubApi(apiPath); const j = await r.json(); if (j && j.sha) sha = j.sha; } catch (_) { /* 文件不存在则新建 */ }
@@ -364,6 +569,8 @@ async function githubPull() {
   const data = JSON.parse(txt);
   if (Array.isArray(data.recipes)) state.recipes = data.recipes.map(migrateRecipe);
   if (Array.isArray(data.collections)) state.collections = data.collections.map(migrateCollection);
+  if (Array.isArray(data.nutfoods)) state.nutfoods = data.nutfoods.map(migrateNutFood);
+  if (Array.isArray(data.nutRecords)) state.nutRecords = data.nutRecords.map(migrateNutRecord);
   _suppressSync = true; save(); _suppressSync = false;
   render();
   updateSyncDot('ok');
@@ -454,6 +661,7 @@ function seed() {
   ];
 
   state.recipes = [r1, r2];
+  state.nutfoods = NUT_SEED.map(f => Object.assign(blankNutFood(), f));
   save();
 }
 
@@ -478,6 +686,7 @@ function showImage(src) {
        <button class="modal-close" data-action="modal-close">×</button>
      </div>`;
 }
+function openModal(html) { $('modalRoot').innerHTML = html; }
 /* 添加图片前先裁剪选区：可框选要保留的图片区域，确认后才写入 */
 let cropCtx = null;
 function openCrop(sec, bid, src, onDone, onSkip) {
@@ -665,6 +874,7 @@ const NAV = [
     { view: 'purchase',  icon: '🛒', label: '点菜采购' },
     { view: 'filter',    icon: '🏷️', label: '菜谱分类' },
     { view: 'nutrition', icon: '🔥', label: '营养热量' },
+    { view: 'nutcal',    icon: '📅', label: '营养日历' },
     { view: 'favorites', icon: '📋', label: '菜谱收藏夹' },
   ]},
   { title: '工具', items: [
@@ -732,7 +942,8 @@ function render() {
   if (state.view === 'library') { renderLibrary(); return; }
   if (state.view === 'purchase') { renderPurchase(); return; }
   if (state.view === 'filter') { renderFilter(); return; }
-  if (state.view === 'nutrition') { renderNutrition(); return; }
+  if (state.view === 'nutrition') { rerenderNut(); return; }
+  if (state.view === 'nutcal') { renderNutCalendar(); return; }
   if (state.view === 'favorites') { renderFavorites(); return; }
 }
 function setChrome(crumb, actionsHTML) {
@@ -763,17 +974,23 @@ function renderLibrary() {
   const q = (state.search || '').trim();
   const list = q ? state.recipes.filter(r => recipeMatches(r, q)) : state.recipes;
   const content = $('content');
+  const searchBar = `
+    <div class="mod-searchbar">
+      <span class="search-ico">🔍</span>
+      <input id="libSearch" class="search-box" placeholder="搜索本页菜谱（名称 / 食材 / 标签）" value="${escAttr(state.search || '')}" data-action="lib-search"/>
+      ${q ? `<button class="mod-search-clear" data-action="lib-search-clear">✕</button>` : ''}
+    </div>`;
   if (!state.recipes.length) {
-    content.innerHTML = `<div class="empty"><div class="big">🍽️</div>还没有菜谱，点击右上角「新增菜谱」开始记录吧</div>`;
+    content.innerHTML = searchBar + `<div class="empty"><div class="big">🍽️</div>还没有菜谱，点击右上角「新增菜谱」开始记录吧</div>`;
     return;
   }
   if (!list.length) {
-    content.innerHTML = `<div class="empty"><div class="big">🔍</div>没有找到与「${escHtml(q)}」匹配的菜谱<div class="hint">换个关键词试试，或清空搜索框</div></div>`;
+    content.innerHTML = searchBar + `<div class="empty"><div class="big">🔍</div>没有找到与「${escHtml(q)}」匹配的菜谱<div class="hint">换个关键词试试，或清空搜索框</div></div>`;
     return;
   }
   const banner = q ? `<div class="search-banner">🔍 搜索「${escHtml(q)}」：${list.length} 道菜谱</div>` : '';
-  const hero = heroCardHTML();
-  content.innerHTML = hero + banner + `<div class="grid">${list.map(recipeCardHTML).join('')}</div>`;
+  const hero = q ? '' : heroCardHTML();
+  content.innerHTML = searchBar + hero + banner + `<div class="grid">${list.map(recipeCardHTML).join('')}</div>`;
 }
 function countText(r) {
   const i = r.sections.ingredients.filter(b => b.kind === 'item').length;
@@ -942,11 +1159,20 @@ function favCardHTML(c) {
 function renderFavorites() {
   setChrome('菜谱收藏夹', `<button class="btn primary" data-action="fav-add">＋ 添加收藏</button>`);
   const content = $('content');
+  const q = (state.favSearch || '').trim().toLowerCase();
+  const list = q ? state.collections.filter(c => (c.title || '').toLowerCase().includes(q) || (c.raw || '').toLowerCase().includes(q) || (c.note || '').toLowerCase().includes(q)) : state.collections;
+  const searchBar = `
+    <div class="mod-searchbar">
+      <span class="search-ico">🔍</span>
+      <input id="favSearch" class="search-box" placeholder="搜索收藏（标题 / 正文 / 备注）" value="${escAttr(state.favSearch || '')}" data-action="fav-search"/>
+      ${q ? `<button class="mod-search-clear" data-action="fav-search-clear">✕</button>` : ''}
+    </div>`;
   if (!state.collections.length) {
-    content.innerHTML = `<div class="empty"><div class="big">📋</div>收藏夹还是空的<div class="hint">把抖音 / 小红书的视频链接粘贴进来：点卡片即可跳转看视频，也能一键转成菜谱库里的菜（视频会作为来源挂在菜谱上，方便边看边填用料和步骤）</div></div>`;
+    content.innerHTML = searchBar + `<div class="empty"><div class="big">📋</div>收藏夹还是空的<div class="hint">把抖音 / 小红书的视频链接粘贴进来：点卡片即可跳转看视频，也能一键转成菜谱库里的菜（视频会作为来源挂在菜谱上，方便边看边填用料和步骤）</div></div>`;
     return;
   }
-  content.innerHTML = `<div class="grid">${state.collections.map(favCardHTML).join('')}</div>`;
+  const shown = list.length ? `<div class="grid">${list.map(favCardHTML).join('')}</div>` : `<div class="empty"><div class="big">🔍</div>没有找到与「${escHtml(state.favSearch)}」匹配的收藏</div>`;
+  content.innerHTML = searchBar + shown;
 }
 
 
@@ -1337,8 +1563,9 @@ function renderPurchase() {
   setChrome('点菜采购', '');
   const content = $('content');
   const recipes = state.recipes;
+  const q = (state.purchaseSearch || '').trim().toLowerCase();
   if (!state.purchaseSelected.length && !state.purchaseList) { /* fallthrough */ }
-  const selList = recipes.map(r => {
+  const selList = recipes.filter(r => !q || (r.name || '').toLowerCase().includes(q) || r.categories.join('/').toLowerCase().includes(q) || r.cookings.join('/').toLowerCase().includes(q)).map(r => {
     const on = state.purchaseSelected.includes(r.id);
     const tags = r.categories.map(t => `<span class="mini-tag">${escHtml(t)}</span>`).join('') +
       r.cookings.map(t => `<span class="mini-tag cook">${escHtml(t)}</span>`).join('');
@@ -1351,11 +1578,19 @@ function renderPurchase() {
       </div>`;
   }).join('');
 
+  const searchBar = `
+    <div class="mod-searchbar">
+      <span class="search-ico">🔍</span>
+      <input id="purSearch" class="search-box" placeholder="搜索本页菜谱（名称 / 分类）" value="${escAttr(state.purchaseSearch || '')}" data-action="pur-search"/>
+      ${q ? `<button class="mod-search-clear" data-action="pur-search-clear">✕</button>` : ''}
+    </div>`;
+
   content.innerHTML = `
+    ${searchBar}
     <div class="section-head">
       <div><span class="section-title">选择菜谱</span><span class="section-sub">勾选即实时汇总采购清单；每行可选基准食材并调整分量</span></div>
     </div>
-    <div class="select-list">${selList || '<div class="empty">暂无菜谱，请先到「菜谱库」添加</div>'}</div>
+    <div class="select-list">${selList || '<div class="empty">暂无匹配的菜谱</div>'}</div>
     <div id="purchase-list">${purchaseListHTML()}</div>`;
 }
 /* 仅刷新采购清单区域（保持选购行的分量输入框聚焦） */
@@ -1423,9 +1658,18 @@ function renderFilter() {
   let results = state.recipes;
   if (f.cat.length) results = results.filter(r => r.categories.some(c => f.cat.includes(c)));
   if (f.cook.length) results = results.filter(r => r.cookings.some(c => f.cook.includes(c)));
+  const q = (state.filterSearch || '').trim().toLowerCase();
+  if (q) results = results.filter(r => (r.name || '').toLowerCase().includes(q) || r.categories.join('/').toLowerCase().includes(q));
 
   const grid = results.length ? `<div class="grid">${results.map(recipeCardHTML).join('')}</div>`
     : `<div class="empty">没有符合条件的菜谱</div>`;
+
+  const searchBar = `
+    <div class="mod-searchbar">
+      <span class="search-ico">🔍</span>
+      <input id="filterSearch" class="search-box" placeholder="在当前分类结果中搜索菜谱" value="${escAttr(state.filterSearch || '')}" data-action="filter-search"/>
+      ${q ? `<button class="mod-search-clear" data-action="filter-search-clear">✕</button>` : ''}
+    </div>`;
 
   $('content').innerHTML = `
     <div class="filter-bar">
@@ -1439,18 +1683,673 @@ function renderFilter() {
       </div>
       <div class="filter-label" style="color:var(--text-3)">已选：${f.cat.concat(f.cook).length ? (f.cat.join('、') + (f.cook.length ? ' ＋ ' + f.cook.join('、') : '')) : '全部'}</div>
     </div>
+    ${searchBar}
     ${grid}`;
 }
 
-/* ---------------- 营养占位 ---------------- */
+/* ==================== 营养热量模块 ==================== */
+function findNutFood(name) {
+  if (!name) return null;
+  const n = norm(name);
+  return state.nutfoods.find(f => norm(f.name) === n) || null;
+}
+
+/* 「记录过准确用量」判定：单位必须是 g 或 ml 且填了数值（其它单位个/勺/适量等一律视为未准确记录） */
+function nutIsAccurate(b) {
+  if (!b || b.kind !== 'item' || !b.name) return false;
+  const u = String(b.unit || '').toLowerCase();
+  return (u === 'g' || u === 'ml') && b.amount != null && !isNaN(b.amount);
+}
+/* 可作「基准食材」的候选：记录过准确用量（g / ml 且有数值）的用料项 */
+function nutBaseOptions(r) {
+  return (r.sections.ingredients || []).concat(r.sections.seasonings || []).filter(nutIsAccurate);
+}
+/* 未记录准确用量的用料项（单位不是 g / ml，例如个 / 勺 / 适量 / 未知单位），系统自动识别并放进下拉框手动填 */
+function nutImpreciseOptions(r) {
+  return (r.sections.ingredients || []).concat(r.sections.seasonings || []).filter(b => b.kind === 'item' && b.name && !nutIsAccurate(b));
+}
+/* 由「基准食材实际用量」推算整道菜缩放倍率（替代份数） */
+function nutScaleFactorOf(r) {
+  const sc = state.nutScale[r.id];
+  if (!sc || !sc.base || sc.amount == null || isNaN(sc.amount) || sc.amount <= 0) return 1;
+  const base = (r.sections.ingredients || []).concat(r.sections.seasonings || []).find(b => b.id === sc.base && b.kind === 'item');
+  if (!base) return 1;
+  const baseG = unitToGrams(base.amount, base.unit);
+  if (baseG == null) return 1;
+  const actualG = unitToGrams(sc.amount, sc.unit || 'g');
+  if (actualG == null) return 1;
+  return actualG / baseG;
+}
+/* 收集某菜谱手动填写的克数：{ 食材名: 克数 } */
+function nutManualMap(r) {
+  const m = {};
+  Object.keys(state.nutManual).forEach(k => {
+    if (!k.startsWith(r.id + '::')) return;
+    const e = state.nutManual[k];
+    if (e && e.amt != null && !isNaN(e.amt) && e.amt > 0) m[k.slice((r.id + '::').length)] = +e.amt;
+  });
+  return m;
+}
+/* 把某菜谱的手动填写序列化成可存进记录的结构 */
+function nutManualForRecord(r) {
+  const out = {};
+  Object.keys(state.nutManual).forEach(k => {
+    if (!k.startsWith(r.id + '::')) return;
+    const e = state.nutManual[k];
+    if (e && e.amt != null) out[k.slice((r.id + '::').length)] = { amt: e.amt, unit: e.unit || 'g' };
+  });
+  return out;
+}
+
+/* 计算某菜谱营养：遍历食材，按用量折算成「克」再按 100g 基准累加
+ * opts.factor：缩放倍率（营养测算用「基准食材实际用量」推算，替代份数）；缺省时沿用 scaleFactorOf * servings
+ * opts.gramsOverride：{ "食材名": 克数 }，用于「适量/未知单位」等无法自动折算的用料手动填克数
+ * 返回 pending（没用量且未手动填）/ noFood（有用量但营养库查不到）供界面提示 */
+function computeRecipeNutrition(r, opts) {
+  opts = opts || {};
+  if (!r) return { total: blankNutTotal(), rows: [] };
+  // 缩放倍率：优先用 opts.factor（营养测算的「基准食材实际用量」推算），
+  // 否则沿用旧逻辑 baseFactor * servings（兼容其它调用方）。
+  const factor = (opts.factor != null) ? opts.factor : (scaleFactorOf(r) * (opts.servings != null ? opts.servings : 1));
+  const rows = [];
+  let sum = blankNutTotal();
+  let pending = [];
+  let noFood = [];
+  r.sections.ingredients.concat(r.sections.seasonings).forEach(b => {
+    if (b.kind !== 'item' || !b.name) return;
+    const food = findNutFood(b.name);
+    // 仅「单位 g / ml 且填了数值」的用料自动折算；个 / 勺 / 适量等按用户要求必须手动填，不自动折算
+    let grams = nutIsAccurate(b) ? unitToGrams(scaleAmt(b.amount, factor), b.unit) : null;
+    if (grams == null) {
+      // 适量 / 未知单位：仅当「有营养数据」时才允许手动填克数补算；否则归入未填写（待下拉框填写）
+      const ov = opts.gramsOverride && opts.gramsOverride[b.name];
+      if (food && ov != null && !isNaN(ov) && ov > 0) grams = +ov * factor; // 手动填的也是原始用量，跟随整道菜倍率等比缩放
+      else { pending.push(b.name); return; }
+    }
+    if (!food) { noFood.push(b.name); return; } // 已折算出克数，但营养库查不到
+    const k = grams / 100;
+    const row = {
+      name: b.name,
+      amount: scaleAmt(b.amount, factor), unit: b.unit, grams: Math.round(grams),
+      kcal: +(food.kcal * k).toFixed(1),
+      protein: +(food.protein * k).toFixed(1),
+      fat: +(food.fat * k).toFixed(1),
+      carb: +(food.carb * k).toFixed(1),
+      sugar: food.sugar != null && food.sugar !== '' ? +(food.sugar * k).toFixed(1) : 0,
+      sodium: food.sodium != null && food.sodium !== '' ? +(food.sodium * k).toFixed(1) : 0,
+      fiber: food.fiber != null && food.fiber !== '' ? +(food.fiber * k).toFixed(1) : 0,
+      matched: !!food,
+    };
+    rows.push(row);
+    sum.kcal += row.kcal; sum.protein += row.protein; sum.fat += row.fat; sum.carb += row.carb;
+    sum.sugar += row.sugar; sum.sodium += row.sodium; sum.fiber += row.fiber;
+  });
+  return {
+    total: {
+      kcal: Math.round(sum.kcal),
+      protein: +sum.protein.toFixed(1),
+      fat: +sum.fat.toFixed(1),
+      carb: +sum.carb.toFixed(1),
+      sugar: +sum.sugar.toFixed(1),
+      sodium: +sum.sodium.toFixed(1),
+      fiber: +sum.fiber.toFixed(1),
+    },
+    rows, pending: [...new Set(pending)], noFood: [...new Set(noFood)],
+  };
+}
+function blankNutTotal() { return { kcal: 0, protein: 0, fat: 0, carb: 0, sugar: 0, sodium: 0, fiber: 0 }; }
+
+/* 营养模块总入口：子视图 calc / lib */
 function renderNutrition() {
-  setChrome('营养热量测算', '');
-  $('content').innerHTML = `
-    <div class="placeholder">
-      <div class="ico">🔥</div>
-      <h2>营养热量测算</h2>
-      <p>规划对接「薄荷健康」开放能力，支持按菜谱自动统计三大营养素（蛋白质 / 碳水 / 脂肪）与热量。<br>首期工作台聚焦菜谱专区，本模块即将上线。</p>
+  const tab = state.nutView || 'calc';
+  const tabs = `
+    <div class="nut-tabs">
+      <button class="nut-tab ${tab === 'calc' ? 'active' : ''}" data-action="nut-tab" data-v="calc">🍽️ 菜谱测算</button>
+      <button class="nut-tab ${tab === 'lib' ? 'active' : ''}" data-action="nut-tab" data-v="lib">📗 食物营养库</button>
     </div>`;
+  setChrome('营养热量', '');
+  $('content').innerHTML = tabs + (tab === 'calc' ? renderNutCalc() : renderNutLib());
+}
+function fmtTime(ts) {
+  const d = new Date(ts);
+  const p = n => (n < 10 ? '0' : '') + n;
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+/* 日期字符串 YYYY-MM-DD（默认今天），用于热量记录按日归档 */
+function todayStr(d) {
+  d = d || new Date();
+  const p = n => (n < 10 ? '0' : '') + n;
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/* ---- 子视图一：菜谱营养测算（多选共同计算 + 分量调整 + 记录） ---- */
+/* 基准食材缩放控件（替代份数：输入某食材实际用量，整道菜等比例缩放） */
+function nutScaleControlHTML(r) {
+  const opts = nutBaseOptions(r);
+  if (!opts.length) return `<div class="nut-scale nut-scale-hint">该菜谱没有记录准确用量的食材，无法按基准缩放（可在菜谱里给食材填克 / 毫升）</div>`;
+  const sc = state.nutScale[r.id];
+  const baseId = (sc && sc.base && opts.some(o => o.id === sc.base)) ? sc.base : opts[0].id;
+  const base = opts.find(o => o.id === baseId);
+  const baseG = unitToGrams(base.amount, base.unit);
+  const amount = sc ? sc.amount : null;
+  const unit = (sc && sc.unit) ? sc.unit : (base.unit === 'ml' ? 'ml' : 'g');
+  const factor = nutScaleFactorOf(r);
+  const optHTML = opts.map(o => `<option value="${escAttr(o.id)}" ${o.id === baseId ? 'selected' : ''}>${escHtml(o.name)} ${o.amount}${escHtml(o.unit || '')}</option>`).join('');
+  return `
+    <div class="nut-scale">
+      <span class="nut-scale-label">基准食材</span>
+      <select class="nut-scale-base" data-action="nut-scale-base" data-id="${escAttr(r.id)}">${optHTML}</select>
+      <span class="nut-scale-eq">实际</span>
+      <input class="nut-scale-amt" type="number" step="any" min="0" data-action="nut-scale-amt" data-id="${escAttr(r.id)}" value="${amount != null ? amount : ''}" placeholder="${baseG != null ? baseG : ''}"/>
+      <select class="nut-scale-unit" data-action="nut-scale-unit" data-id="${escAttr(r.id)}">
+        <option value="g" ${unit === 'g' ? 'selected' : ''}>g</option>
+        <option value="ml" ${unit === 'ml' ? 'selected' : ''}>ml</option>
+      </select>
+      ${factor !== 1 ? `<span class="nut-scale-eq">整道菜按 ${factor.toFixed(2)}× 缩放</span>` : `<span class="nut-scale-eq dim">改「实际」用量即等比缩放其它用料</span>`}
+    </div>`;
+}
+
+/* 未记录准确用量的食材：勾选菜谱后「全部自动显示」为填写行（单位默认 g，可切 ml；留空不计入） */
+function nutManualControlHTML(r) {
+  const all = nutImpreciseOptions(r);
+  if (!all.length) return '';
+  const rows = all.map(b => {
+    const e = state.nutManual[r.id + '::' + b.name] || { amt: null, unit: 'g' };
+    return `
+      <div class="nut-imp-row">
+        <span class="nut-imp-name">${escHtml(b.name)}</span>
+        <input class="nut-imp-amt" type="number" step="any" min="0" placeholder="用量" value="${e.amt != null ? e.amt : ''}" data-action="nut-imp-amt" data-rid="${escAttr(r.id)}" data-name="${escAttr(b.name)}"/>
+        <select class="nut-imp-unit" data-action="nut-imp-unit" data-rid="${escAttr(r.id)}" data-name="${escAttr(b.name)}">
+          <option value="g" ${e.unit !== 'ml' ? 'selected' : ''}>g</option>
+          <option value="ml" ${e.unit === 'ml' ? 'selected' : ''}>ml</option>
+        </select>
+      </div>`;
+  }).join('');
+  return `
+    <div class="nut-imp">
+      <div class="nut-imp-title">未记录准确用量的食材（逐项填写用量，留空不计入；单位默认 g）</div>
+      <div class="nut-imp-rows">${rows}</div>
+    </div>`;
+}
+
+/* 聚合所有已选菜谱的营养，返回结果区 HTML（含圆环 / 宏量 / 无数据提示）；同时刷新 nutAgg */
+function nutResultHTML() {
+  const selected = state.nutSelRecipes.map(id => getRecipe(id)).filter(Boolean);
+  if (!selected.length) return `<div class="nut-empty"><div class="ico">🍳</div><p>勾选上方菜谱，自动按用量实时汇总热量与营养。</p></div>`;
+  const rowsByName = {};
+  let total = blankNutTotal();
+  let noFoodAll = [];
+  let pendingAll = [];
+  selected.forEach(r => {
+    const res = computeRecipeNutrition(r, { factor: nutScaleFactorOf(r), gramsOverride: nutManualMap(r) });
+    res.rows.forEach(row => {
+      const k = norm(row.name);
+      if (!rowsByName[k]) rowsByName[k] = { name: row.name, grams: 0, kcal: 0, protein: 0, fat: 0, carb: 0, sugar: 0, sodium: 0, fiber: 0 };
+      const a = rowsByName[k];
+      a.grams += row.grams; a.kcal += row.kcal; a.protein += row.protein; a.fat += row.fat;
+      a.carb += row.carb; a.sugar += row.sugar; a.sodium += row.sodium; a.fiber += row.fiber;
+    });
+    ['kcal', 'protein', 'fat', 'carb', 'sugar', 'sodium', 'fiber'].forEach(k => total[k] += res.total[k]);
+    res.noFood.forEach(n => noFoodAll.push(n));
+    res.pending.forEach(n => pendingAll.push(n));
+  });
+  ['kcal', 'protein', 'fat', 'carb', 'sugar', 'sodium', 'fiber'].forEach(k => total[k] = Math.round(total[k] * 10) / 10);
+  nutAgg = { rows: Object.values(rowsByName), total };
+  const pct = (v, tot) => tot > 0 ? Math.round(v / tot * 100) : 0;
+  const eP = total.protein * 4, eF = total.fat * 9, eC = total.carb * 4;
+  const eTot = eP + eF + eC || 1;
+  const ring = `
+    <div class="nut-ring">
+      <svg viewBox="0 0 120 120" width="150" height="150">
+        <circle cx="60" cy="60" r="52" fill="none" stroke="#f0e6fa" stroke-width="14"/>
+        <circle cx="60" cy="60" r="52" fill="none" stroke="var(--brand)" stroke-width="14"
+          stroke-dasharray="${(eP / eTot) * 326.7} 326.7" stroke-dashoffset="0" transform="rotate(-90 60 60)"/>
+        <circle cx="60" cy="60" r="52" fill="none" stroke="#ff9ec4" stroke-width="14"
+          stroke-dasharray="${(eF / eTot) * 326.7} 326.7" stroke-dashoffset="${-(eP / eTot) * 326.7}" transform="rotate(-90 60 60)"/>
+        <circle cx="60" cy="60" r="52" fill="none" stroke="#ffd27d" stroke-width="14"
+          stroke-dasharray="${(eC / eTot) * 326.7} 326.7" stroke-dashoffset="${-((eP + eF) / eTot) * 326.7}" transform="rotate(-90 60 60)"/>
+        <text x="60" y="54" text-anchor="middle" class="nut-ring-num">${total.kcal}</text>
+        <text x="60" y="74" text-anchor="middle" class="nut-ring-unit">千卡 / 合计</text>
+      </svg>
+    </div>`;
+  const top3For = (el, title) => {
+    const rows = nutAgg.rows.slice().sort((a, b) => (b[el] || 0) - (a[el] || 0)).slice(0, 3);
+    const list = rows.length ? rows.map((r, i) => `
+      <div class="nut-top-row">
+        <span class="nut-top-rank">${i + 1}</span>
+        <span class="nut-top-name">${escHtml(r.name)}</span>
+        <span class="nut-top-val">${Math.round(r[el] * 10) / 10} g</span>
+        <span class="nut-top-kcal">${Math.round(r.kcal)} kcal</span>
+      </div>`).join('') : '<p class="dim" style="font-size:12px;margin:2px 0">暂无数据</p>';
+    return `<div class="macro-top3" data-el="${el}" hidden>
+      <div class="macro-top3-head">${title} · 来源最高的 3 种食材</div>
+      <div class="nut-top-list">${list}</div>
+    </div>`;
+  };
+  const macros = `
+    <div class="nut-macros">
+      <div class="macro p clickable" data-action="nut-macro" data-el="protein"><div class="macro-v">${total.protein}g</div><div class="macro-l">蛋白质 ${pct(eP, eTot)}%</div></div>
+      <div class="macro f clickable" data-action="nut-macro" data-el="fat"><div class="macro-v">${total.fat}g</div><div class="macro-l">脂肪 ${pct(eF, eTot)}%</div></div>
+      <div class="macro c clickable" data-action="nut-macro" data-el="carb"><div class="macro-v">${total.carb}g</div><div class="macro-l">碳水 ${pct(eC, eTot)}%</div></div>
+    </div>
+    <div class="macro-top3-wrap">
+      ${top3For('protein', '蛋白质')}
+      ${top3For('fat', '脂肪')}
+      ${top3For('carb', '碳水')}
+    </div>
+    <div class="nut-extra">
+      <span class="ne sugar">糖 ${total.sugar}g</span>
+      <span class="ne sodium">盐 ${total.sodium}mg</span>
+      <span class="ne fiber">膳食纤维 ${total.fiber}g</span>
+    </div>
+    <div class="macro-hint">点击三大营养素，下方展开贡献最高的 3 种食材</div>`;
+  const noFood = noFoodAll.length ? `
+    <div class="nut-warn">
+      <div>⚠️ 以下用料查不到营养数据，未计入热量（可在「食物营养库」补录）：</div>
+      <div class="nut-warn-list">${[...new Set(noFoodAll)].map(n => `<span class="nut-ov"><span class="nut-ov-name">${escHtml(n)}</span><button class="tiny" data-action="nut-add-food" data-name="${escAttr(n)}">＋补录</button></span>`).join('')}</div>
+    </div>` : '';
+  const pending = pendingAll.length ? `
+    <div class="nut-pending">
+      ℹ️ 以下用量未填、暂未计入：${[...new Set(pendingAll)].map(n => escHtml(n)).join('、')}
+    </div>` : '';
+  return ring + macros + noFood + pending;
+}
+
+/* 仅刷新营养结果区（保持选购行的输入框聚焦，不整页重渲染） */
+function refreshNutResult() {
+  const el = document.getElementById('nutResult');
+  if (!el) { rerenderNut(); return; }
+  el.innerHTML = nutResultHTML();
+}
+
+/* 点击宏量元素：在对应元素下方内联展开/收起「来源最高的 3 种食材」（不弹窗） */
+function toggleNutMacro(el) {
+  const panel = document.querySelector(`.macro-top3[data-el="${el}"]`);
+  if (!panel) return;
+  const card = document.querySelector(`.macro[data-el="${el}"]`);
+  const willOpen = panel.hasAttribute('hidden');
+  // 同一时间只展开一个，先收起其它
+  document.querySelectorAll('.macro-top3.open').forEach(p => { p.setAttribute('hidden', ''); p.classList.remove('open'); });
+  document.querySelectorAll('.macro.open').forEach(m => m.classList.remove('open'));
+  if (willOpen) {
+    panel.removeAttribute('hidden');
+    panel.classList.add('open');
+    if (card) card.classList.add('open');
+  }
+}
+
+function renderNutCalc() {
+  const recipes = state.recipes;
+  if (!recipes.length) {
+    return `<div class="nut-calc"><div class="nut-empty"><div class="ico">🔥</div><p>还没有菜谱，先去「菜谱库」添加几道菜，再来测算热量吧。</p></div></div>`;
+  }
+  const selList = nutSelListHTML();
+
+  const selected = state.nutSelRecipes.map(id => getRecipe(id)).filter(Boolean);
+  const hasSel = selected.length > 0;
+
+  const recView = state.nutRecView ? state.nutRecords.find(x => x.id === state.nutRecView) : null;
+  const recDetail = recView ? nutRecDetailHTML(recView) : '';
+
+  const recList = state.nutRecords.length ? `
+    <h3 class="nut-sub">热量记录（${state.nutRecords.length}）</h3>
+    <div class="nut-rec-list">
+      ${state.nutRecords.slice().reverse().map(rec => `
+        <div class="nut-rec ${state.nutRecView === rec.id ? 'on' : ''}" data-action="nut-rec-view" data-id="${escAttr(rec.id)}">
+          <div class="nut-rec-main">
+            <span class="nut-rec-k">${rec.total.kcal} 千卡</span>
+            <span class="nut-rec-t">${fmtTime(rec.createdAt)}</span>
+          </div>
+          <div class="nut-rec-sub">${rec.recipes.map(x => escHtml(x.name)).join('、') || '—'}</div>
+          <div class="nut-rec-acts">
+            <button class="tiny" data-action="nut-rec-apply" data-id="${escAttr(rec.id)}">套用此记录</button>
+            <button class="tiny danger" data-action="nut-rec-del" data-id="${escAttr(rec.id)}">删除</button>
+          </div>
+        </div>`).join('')}
+    </div>` : '';
+
+  return `
+    <div class="nut-calc">
+      <div class="mod-searchbar">
+        <span class="search-ico">🔍</span>
+        <input id="nutCalcSearch" class="search-box" placeholder="搜索菜谱（名称 / 食材 / 标签）" value="${escAttr(state.nutCalcSearch || '')}" data-action="nut-calc-search"/>
+      </div>
+      <div class="nut-select-head">
+        <h3 class="nut-sub" style="margin:0">选择菜谱（可多选共同计算）</h3>
+        <div class="nut-select-acts">
+          <button class="tiny" data-action="nut-all">全选</button>
+          <button class="tiny" data-action="nut-reset">↻ 重置</button>
+          <button class="btn sm primary" data-action="nut-record" ${hasSel ? '' : 'disabled'}>📝 生成记录</button>
+        </div>
+      </div>
+      <div class="nut-sel-list">${selList}</div>
+      <div id="nutResult">${hasSel ? nutResultHTML() : `<div class="nut-empty"><div class="ico">🍳</div><p>勾选上方菜谱，自动按用量实时汇总热量与营养。</p></div>`}</div>
+      ${recDetail}
+      ${recList}
+    </div>`;
+}
+
+/* ---- 营养日历：左右分栏（左=可视化，右=可点击日历） ---- */
+
+/* 菜谱勾选列表 HTML（营养测算与营养日历左栏共用）；受 nutCalcSearch 过滤（仅本模块搜索） */
+function nutSelListHTML() {
+  const q = (state.nutCalcSearch || '').trim();
+  const recipes = q ? state.recipes.filter(r => recipeMatches(r, q)) : state.recipes;
+  if (!recipes.length) {
+    return `<div class="nut-sel-empty dim">${state.recipes.length ? '没有匹配的菜谱' : '还没有菜谱，先去「菜谱库」添加'}</div>`;
+  }
+  return recipes.map(r => {
+    const on = state.nutSelRecipes.includes(r.id);
+    const cover = r.cover ? `style="background-image:url('${r.cover}')"` : '';
+    const ctrl = on ? (nutScaleControlHTML(r) + nutManualControlHTML(r)) : '';
+    return `
+      <div class="nut-sel ${on ? 'on' : ''}">
+        <label class="nut-sel-label">
+          <input type="checkbox" ${on ? 'checked' : ''} data-action="nut-toggle" data-id="${escAttr(r.id)}"/>
+          <span class="nut-sel-cover ${r.cover ? '' : 'no-img'}" ${cover}>${r.cover ? '' : '🍲'}</span>
+          <span class="nut-sel-name">${escHtml(r.name || '未命名菜谱')}</span>
+        </label>
+        ${ctrl}
+      </div>`;
+  }).join('');
+}
+
+/* 记录详情 HTML（营养测算与营养日历共用） */
+function nutRecDetailHTML(rec) {
+  return `
+    <div class="nut-rec-detail">
+      <div class="nut-rec-detail-head">
+        <div><b>热量记录</b> · ${fmtTime(rec.createdAt)}</div>
+        <button class="tiny" data-action="nut-rec-close">收起</button>
+      </div>
+      <div class="nut-rec-kcal">${rec.total.kcal} 千卡</div>
+      <div class="nut-extra">
+        <span class="ne sugar">糖 ${rec.total.sugar}g</span>
+        <span class="ne sodium">盐 ${rec.total.sodium}mg</span>
+        <span class="ne fiber">膳食纤维 ${rec.total.fiber}g</span>
+      </div>
+      <div class="nut-rec-rows">${rec.rows.map(x => `<div class="nut-rec-row">${escHtml(x.name)} ≈ ${Math.round(x.grams)}g · ${Math.round(x.kcal)}kcal</div>`).join('')}</div>
+      <div class="nut-rec-recipes">含菜谱：${rec.recipes.map(x => escHtml(x.name) + (x.scale ? `（基准 ${x.scale.amount}${x.scale.unit}）` : (x.servings != null ? `（${x.servings}份）` : ''))).join('、')}</div>
+      <div class="nut-rec-acts">
+        <button class="tiny" data-action="nut-rec-apply" data-id="${escAttr(rec.id)}">套用此记录</button>
+        <button class="tiny danger" data-action="nut-rec-del" data-id="${escAttr(rec.id)}">删除</button>
+      </div>
+    </div>`;
+}
+
+/* 生成一条热量记录（含按日归档的 date 字段）；无勾选返回 null */
+function genNutRecord() {
+  const selected = state.nutSelRecipes.map(id => getRecipe(id)).filter(Boolean);
+  if (!selected.length) return null;
+  const rowsByName = {}; let total = blankNutTotal();
+  selected.forEach(r => {
+    const res = computeRecipeNutrition(r, { factor: nutScaleFactorOf(r), gramsOverride: nutManualMap(r) });
+    res.rows.forEach(row => {
+      const k = norm(row.name);
+      if (!rowsByName[k]) rowsByName[k] = { name: row.name, grams: 0, kcal: 0, protein: 0, fat: 0, carb: 0, sugar: 0, sodium: 0, fiber: 0 };
+      const a = rowsByName[k];
+      a.grams += row.grams; a.kcal += row.kcal; a.protein += row.protein; a.fat += row.fat;
+      a.carb += row.carb; a.sugar += row.sugar; a.sodium += row.sodium; a.fiber += row.fiber;
+    });
+    ['kcal', 'protein', 'fat', 'carb', 'sugar', 'sodium', 'fiber'].forEach(k => total[k] += res.total[k]);
+  });
+  ['kcal', 'protein', 'fat', 'carb', 'sugar', 'sodium', 'fiber'].forEach(k => total[k] = Math.round(total[k] * 10) / 10);
+  return {
+    id: uid(), createdAt: Date.now(), date: todayStr(),
+    recipes: selected.map(r => ({ id: r.id, name: r.name, scale: state.nutScale[r.id] || null, manual: nutManualForRecord(r) })),
+    total, rows: Object.values(rowsByName).map(x => ({ name: x.name, grams: Math.round(x.grams), kcal: Math.round(x.kcal) })),
+  };
+}
+
+/* 套用一条记录：还原其菜谱勾选、基准缩放与手动用量 */
+function applyNutRecord(id) {
+  const rec = state.nutRecords.find(x => x.id === id);
+  if (!rec) return;
+  state.nutSelRecipes = rec.recipes.map(x => x.id);
+  state.nutScale = {}; state.nutManual = {};
+  rec.recipes.forEach(x => {
+    if (x.scale) state.nutScale[x.id] = x.scale;
+    if (x.manual) Object.keys(x.manual).forEach(n => { state.nutManual[x.id + '::' + n] = x.manual[n]; });
+  });
+}
+
+/* 删除一条记录（同步清掉打开中的详情） */
+function deleteNutRecord(id) {
+  state.nutRecords = state.nutRecords.filter(x => x.id !== id);
+  if (state.nutRecView === id) state.nutRecView = null;
+  save();
+}
+
+/* 营养相关视图统一重渲染：在「营养日历」里渲染日历，否则渲染测算 */
+function rerenderNut() {
+  if (state.view === 'nutcal') renderNutCalendar();
+  else renderNutrition();
+}
+
+function renderNutCalendar() {
+  if (!state.recipes.length) {
+    return `<div class="nut-calc"><div class="nut-empty"><div class="ico">🔥</div><p>还没有菜谱，先去「菜谱库」添加几道菜，再来做营养日历吧。</p></div></div>`;
+  }
+  if (!state.nutCal) state.nutCal = { y: new Date().getFullYear(), m: new Date().getMonth() };
+  const { y, m } = state.nutCal;
+  const startW = new Date(y, m, 1).getDay();
+  const days = new Date(y, m + 1, 0).getDate();
+  const recDates = {};
+  state.nutRecords.forEach(r => { if (r.date) recDates[r.date] = (recDates[r.date] || 0) + 1; });
+  const calQ = (state.nutCalSearch || '').trim().toLowerCase();
+  const matchedRecs = calQ ? state.nutRecords.filter(r => (r.date || '').toLowerCase().includes(calQ) || (r.recipes || []).some(x => (x.name || '').toLowerCase().includes(calQ))) : [];
+  const matchedDates = {};
+  matchedRecs.forEach(r => { if (r.date) matchedDates[r.date] = true; });
+  let cells = '';
+  for (let i = 0; i < startW; i++) cells += `<div class="nut-cal-cell empty"></div>`;
+  for (let d = 1; d <= days; d++) {
+    const ds = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const cnt = recDates[ds] || 0;
+    const sel = state.nutCalSel === ds ? ' sel' : '';
+    let cls = 'nut-cal-cell';
+    if (cnt) cls += ' has-rec';
+    if (calQ && cnt) cls += matchedDates[ds] ? ' match' : ' dim';
+    cls += sel;
+    cells += `<div class="${cls}" data-action="nut-cal-day" data-date="${ds}">
+      <span class="nut-cal-num">${d}</span>${cnt ? `<span class="nut-cal-dot" title="${cnt} 条记录"></span>` : ''}</div>`;
+  }
+  const monthLabel = `${y}年${m + 1}月`;
+  const dayRecords = state.nutCalSel
+    ? state.nutRecords.filter(r => r.date === state.nutCalSel).sort((a, b) => b.createdAt - a.createdAt)
+    : [];
+  const selRec = dayRecords.find(r => r.id === state.nutRecView) || null;
+  const dayList = state.nutCalSel ? `
+    <div class="nut-cal-daylist">
+      <h4 class="nut-cal-daytitle">${state.nutCalSel} 的热量记录（${dayRecords.length}）</h4>
+      ${dayRecords.length ? `<div class="nut-rec-list">${dayRecords.map(rec => `
+        <div class="nut-rec ${state.nutRecView === rec.id ? 'on' : ''}" data-action="nut-rec-view" data-id="${escAttr(rec.id)}">
+          <div class="nut-rec-main">
+            <span class="nut-rec-k">${rec.total.kcal} 千卡</span>
+            <span class="nut-rec-t">${fmtTime(rec.createdAt)}</span>
+          </div>
+          <div class="nut-rec-sub">${rec.recipes.map(x => escHtml(x.name)).join('、') || '—'}</div>
+        </div>`).join('')}</div>` : '<p class="dim">这一天还没有热量记录。</p>'}
+      ${selRec ? nutRecDetailHTML(selRec) : ''}
+    </div>` : `<p class="nut-cal-hint dim">点击带 ● 标记的日期，查看当日的热量记录。</p>`;
+
+  const selected = state.nutSelRecipes.map(id => getRecipe(id)).filter(Boolean);
+  const hasSel = selected.length > 0;
+  return `
+    <div class="nut-split">
+      <div class="nut-split-left">
+        <div class="nut-split-title">📊 营养可视化（今日测算）</div>
+        <div class="nut-select-head">
+          <div class="nut-select-acts">
+            <button class="tiny" data-action="nut-all">全选</button>
+            <button class="tiny" data-action="nut-reset">↻ 重置</button>
+            <button class="btn sm primary" data-action="nut-record" ${hasSel ? '' : 'disabled'}>📝 保存为 ${todayStr()} 记录</button>
+          </div>
+        </div>
+        <div class="nut-sel-list">${nutSelListHTML()}</div>
+        <div id="nutResult">${hasSel ? nutResultHTML() : `<div class="nut-empty"><div class="ico">🍳</div><p>勾选上方菜谱，自动按用量实时汇总热量与营养。</p></div>`}</div>
+      </div>
+      <div class="nut-split-right">
+        <div class="nut-cal-card">
+          <div class="mod-searchbar nut-cal-searchbar">
+            <span class="search-ico">🔍</span>
+            <input id="nutCalSearch" class="search-box" placeholder="搜索记录（菜谱名 / 日期 如 07-31）" value="${escAttr(state.nutCalSearch || '')}" data-action="nut-cal-search"/>
+          </div>
+          <div class="nut-cal-head">
+            <button class="tiny" data-action="nut-cal-prev">◀</button>
+            <span class="nut-cal-title">${monthLabel}</span>
+            <button class="tiny" data-action="nut-cal-next">▶</button>
+          </div>
+          <div class="nut-cal-week">
+            ${['日', '一', '二', '三', '四', '五', '六'].map(w => `<span>${w}</span>`).join('')}
+          </div>
+          <div class="nut-cal-grid">${cells}</div>
+          ${calQ ? `
+            <div class="nut-cal-searchres">
+              <h4 class="nut-cal-daytitle">🔍 搜索结果（${matchedRecs.length}）</h4>
+              ${matchedRecs.length ? `<div class="nut-rec-list">${matchedRecs.slice().sort((a, b) => String(b.date).localeCompare(String(a.date))).map(rec => `
+                <div class="nut-rec" data-action="nut-cal-result" data-date="${escAttr(rec.date)}" data-id="${escAttr(rec.id)}">
+                  <div class="nut-rec-main">
+                    <span class="nut-rec-k">${rec.total.kcal} 千卡</span>
+                    <span class="nut-rec-t">${escHtml(rec.date || '')}</span>
+                  </div>
+                  <div class="nut-rec-sub">${rec.recipes.map(x => escHtml(x.name)).join('、') || '—'}</div>
+                </div>`).join('')}</div>` : '<p class="dim">没有匹配的记录。</p>'}
+            </div>` : ''}
+          ${dayList}
+        </div>
+      </div>
+    </div>`;
+}
+
+/* ---- 子视图二：食物营养库 ---- */
+function renderNutLib() {
+  const q = (state.nutSearch || '').trim().toLowerCase();
+  const list = state.nutfoods
+    .filter(f => !q || f.name.toLowerCase().includes(q))
+    .sort((a, b) => a.name.localeCompare(b.name, 'zh'));
+  const rows = list.map(f => `
+    <div class="nut-food" data-action="nut-edit-food" data-id="${escAttr(f.id)}">
+      <div class="nut-food-name">${escHtml(f.name)}</div>
+      <div class="nut-food-kcal">${f.kcal} <small>kcal/100g</small></div>
+      <div class="nut-food-macros">
+        <span class="macro-t p">蛋白 ${f.protein}g</span>
+        <span class="macro-t f">脂肪 ${f.fat}g</span>
+        <span class="macro-t c">碳水 ${f.carb}g</span>
+        ${f.sugar != null && f.sugar !== '' ? `<span class="macro-t s">糖 ${f.sugar}g</span>` : ''}
+        ${f.sodium != null && f.sodium !== '' ? `<span class="macro-t s">盐 ${f.sodium}mg</span>` : ''}
+        ${f.fiber != null && f.fiber !== '' ? `<span class="macro-t s">纤维 ${f.fiber}g</span>` : ''}
+      </div>
+    </div>`).join('') || '<p class="dim">没有匹配的食物</p>';
+  return `
+    <div class="nut-lib">
+      <div class="nut-searchbar">
+        <span class="search-ico">🔍</span>
+        <input id="nutSearch" class="search-box" placeholder="搜索食物（如 鸡胸肉）" value="${escAttr(state.nutSearch || '')}" data-action="nut-search"/>
+        <button class="btn sm" data-action="nut-import">⬆ 批量导入</button>
+        <button class="btn sm primary" data-action="nut-edit-food" data-id="">＋ 新增</button>
+      </div>
+      <div class="nut-food-list">${rows}</div>
+      <p class="dim nut-tip">点任意一条可修改 / 删除；没找到的用「＋ 新增」补上；也可以用「批量导入」一次上传多行热量表（同名食材自动覆盖）。</p>
+    </div>`;
+}
+
+/* 营养库批量导入弹窗：支持粘贴文本或上传文件，同名食材覆盖旧数据 */
+function openNutImportModal() {
+  const panel = `
+    <div class="modal-mask" data-action="modal-close">
+      <div class="modal-panel nut-food-modal">
+        <div class="modal-title">批量导入热量表</div>
+        <p class="modal-hint">每行一种食物，用逗号分隔：<br><b>名称,热量,蛋白质,脂肪,碳水,糖,盐,纤维</b><br>例：<code>鸡胸肉,133,19.4,5,2.5</code>（糖/盐/纤维可省略）。同名食材会自动覆盖旧数据。</p>
+        <textarea id="nutImportText" class="batch-input" placeholder="鸡胸肉,133,19.4,5,2.5&#10;西兰花,34,4.1,0.6,4.3"></textarea>
+        <div class="import-file-row">
+          <input type="file" id="nutImportFile" accept=".txt,.csv" />
+        </div>
+        <div id="nutImportMsg" class="import-msg"></div>
+        <div class="modal-actions">
+          <span class="spacer"></span>
+          <button class="btn sm" data-action="modal-close">取消</button>
+          <button class="btn sm primary" data-action="nut-import-do">导入</button>
+        </div>
+      </div>
+    </div>`;
+  openModal(panel);
+  const fileEl = document.getElementById('nutImportFile');
+  fileEl.addEventListener('change', () => {
+    const file = fileEl.files && fileEl.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => { const ta = document.getElementById('nutImportText'); if (ta) ta.value = String(reader.result || ''); };
+    reader.readAsText(file);
+  });
+}
+function nutImportParse(text) {
+  const lines = String(text || '').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  const out = []; const errs = [];
+  lines.forEach((ln, i) => {
+    const parts = ln.split(/[,，\t]/).map(s => s.trim());
+    const name = parts[0];
+    if (!name) { errs.push('第' + (i + 1) + '行缺少名称'); return; }
+    const num = j => (parts[j] === undefined || parts[j] === '' ? '' : (isNaN(parseFloat(parts[j])) ? '' : parseFloat(parts[j])));
+    out.push({ name, kcal: num(1), protein: num(2), fat: num(3), carb: num(4), sugar: num(5), sodium: num(6), fiber: num(7), per: 100 });
+  });
+  return { out, errs };
+}
+function upsertNutFood(f) {
+  const exist = findNutFood(f.name);
+  if (exist) Object.assign(exist, f);
+  else state.nutfoods.push(Object.assign(blankNutFood(), f));
+}
+function nutImportApply(text) {
+  const { out, errs } = nutImportParse(text);
+  if (!out.length) { return { added: 0, covered: 0, errs: errs.length ? errs : ['没有可导入的数据'] }; }
+  let added = 0, covered = 0;
+  out.forEach(f => {
+    const exist = findNutFood(f.name);
+    if (exist) covered++; else added++;
+    upsertNutFood(f);
+  });
+  return { added, covered, errs };
+}
+
+/* 营养库编辑弹窗（name 预填，用于从未匹配食材一键补录） */
+function openNutFoodModal(id, name) {
+  const f = id ? state.nutfoods.find(x => x.id === id) : null;
+  const v = f || blankNutFood();
+  if (name) v.name = name;
+  const val = (k) => escAttr(v[k] != null && v[k] !== '' ? v[k] : '');
+  const panel = `
+    <div class="modal-mask" data-action="modal-close">
+      <div class="modal-panel nut-food-modal">
+        <div class="modal-title">${f ? '编辑食物营养' : '新增食物营养'}</div>
+        <div class="field-row">
+          <label class="field"><span class="field-label">食物名称</span>
+            <input id="nfName" class="finput" value="${val('name')}" placeholder="如 鸡胸肉"/></label>
+        </div>
+        <div class="field-grid">
+          <label class="field"><span class="field-label">热量 (kcal/100g)</span>
+            <input id="nfKcal" class="finput" type="number" step="any" value="${val('kcal')}"/></label>
+          <label class="field"><span class="field-label">蛋白质 (g)</span>
+            <input id="nfProtein" class="finput" type="number" step="any" value="${val('protein')}"/></label>
+          <label class="field"><span class="field-label">脂肪 (g)</span>
+            <input id="nfFat" class="finput" type="number" step="any" value="${val('fat')}"/></label>
+          <label class="field"><span class="field-label">碳水 (g)</span>
+            <input id="nfCarb" class="finput" type="number" step="any" value="${val('carb')}"/></label>
+          <label class="field"><span class="field-label">糖 (g)</span>
+            <input id="nfSugar" class="finput" type="number" step="any" value="${val('sugar')}"/></label>
+          <label class="field"><span class="field-label">盐/钠 (mg)</span>
+            <input id="nfSodium" class="finput" type="number" step="any" value="${val('sodium')}"/></label>
+          <label class="field"><span class="field-label">膳食纤维 (g)</span>
+            <input id="nfFiber" class="finput" type="number" step="any" value="${val('fiber')}"/></label>
+        </div>
+        <div class="modal-actions">
+          ${f ? `<button class="btn sm danger" data-action="nut-del-food" data-id="${escAttr(f.id)}">删除</button>` : ''}
+          <span class="spacer"></span>
+          <button class="btn sm" data-action="modal-close">取消</button>
+          <button class="btn sm primary" data-action="nut-save-food" data-id="${escAttr(f ? f.id : '')}">保存</button>
+        </div>
+      </div>
+    </div>`;
+  openModal(panel);
 }
 
 /* ---------------- 事件：点击 ---------------- */
@@ -1472,6 +2371,10 @@ async function handleClick(e) {
   if (a === 'crop-original') { if (cropCtx) cropCtx.finish(cropCtx.src); return; }
 
   switch (a) {
+    case 'lib-search-clear': state.search = ''; renderLibrary(); break;
+    case 'fav-search-clear': state.favSearch = ''; renderFavorites(); break;
+    case 'pur-search-clear': state.purchaseSearch = ''; renderPurchase(); break;
+    case 'filter-search-clear': state.filterSearch = ''; renderFilter(); break;
     case 'open-editor-new': openEditor(null); break;
     case 'goto-filter': gotoFilterCat(t.dataset.cat); break;
     case 'view-recipe': renderRecipeView(t.dataset.id); break;
@@ -1794,18 +2697,120 @@ async function handleClick(e) {
       refreshSection('prep');
       break;
     }
+
+    /* ===== 营养热量模块 ===== */
+    case 'nut-tab': state.nutView = t.dataset.v; rerenderNut(); break;
+    case 'nut-toggle': {
+      const id = t.dataset.id;
+      if (state.nutSelRecipes.includes(id)) state.nutSelRecipes = state.nutSelRecipes.filter(x => x !== id);
+      else state.nutSelRecipes.push(id);
+      rerenderNut(); break;
+    }
+    case 'nut-all': state.nutSelRecipes = state.recipes.map(r => r.id); rerenderNut(); break;
+    case 'nut-reset':
+      state.nutSelRecipes = []; state.nutScale = {}; state.nutManual = {}; state.nutRecView = null;
+      rerenderNut(); break;
+    case 'nut-macro': toggleNutMacro(t.dataset.el); break;
+    case 'nut-cal-prev': {
+      if (!state.nutCal) state.nutCal = { y: new Date().getFullYear(), m: new Date().getMonth() };
+      let { y, m } = state.nutCal; m--; if (m < 0) { m = 11; y--; }
+      state.nutCal = { y, m }; render(); break;
+    }
+    case 'nut-cal-next': {
+      if (!state.nutCal) state.nutCal = { y: new Date().getFullYear(), m: new Date().getMonth() };
+      let { y, m } = state.nutCal; m++; if (m > 11) { m = 0; y++; }
+      state.nutCal = { y, m }; render(); break;
+    }
+    case 'nut-cal-day': {
+      state.nutCalSel = t.dataset.date;
+      state.nutRecView = null;
+      render(); break;
+    }
+    case 'nut-cal-result': {
+      state.nutCalSel = t.dataset.date;
+      state.nutRecView = t.dataset.id;
+      render(); break;
+    }
+    case 'nut-record': {
+      const rec = genNutRecord();
+      if (!rec) { toast('请先勾选至少一道菜谱'); break; }
+      state.nutRecords.unshift(rec);
+      save();
+      state.nutRecView = rec.id;
+      state.nutCalSel = rec.date;
+      rerenderNut();
+      toast('已生成热量记录');
+      break;
+    }
+    case 'nut-rec-view': state.nutRecView = (state.nutRecView === t.dataset.id) ? null : t.dataset.id; rerenderNut(); break;
+    case 'nut-rec-close': state.nutRecView = null; rerenderNut(); break;
+    case 'nut-rec-del':
+      state.nutRecords = state.nutRecords.filter(x => x.id !== t.dataset.id);
+      if (state.nutRecView === t.dataset.id) state.nutRecView = null;
+      save(); rerenderNut(); break;
+    case 'nut-rec-apply': {
+      applyNutRecord(t.dataset.id);
+      if (state.view === 'nutcal') { state.view = 'nutrition'; state.nutView = 'calc'; }
+      rerenderNut(); toast('已套用该记录的菜谱与用量'); break;
+    }
+    case 'nut-import': openNutImportModal(); break;
+    case 'nut-import-do': {
+      const ta = document.getElementById('nutImportText');
+      const text = ta ? ta.value : '';
+      const res = nutImportApply(text);
+      if (res.errs && res.errs.length) {
+        const msg = document.getElementById('nutImportMsg');
+        if (msg) msg.innerHTML = '<span class="import-err">' + res.errs.join('<br>') + '</span>';
+        if (!res.added && !res.covered) break;
+      }
+      save();
+      closeModal();
+      renderNutrition();
+      toast('导入完成：新增 ' + res.added + ' 条，覆盖 ' + res.covered + ' 条');
+      break;
+    }
+    case 'nut-add-food': openNutFoodModal(null, t.dataset.name); break;
+    case 'nut-edit-food': openNutFoodModal(t.dataset.id || null); break;
+    case 'nut-save-food': {
+      const id = t.dataset.id;
+      const name = document.getElementById('nfName').value.trim();
+      const getN = (k) => { const v = document.getElementById(k).value; return v === '' ? '' : parseFloat(v); };
+      if (!name) { toast('请填写食物名称'); break; }
+      const data = { name, kcal: getN('nfKcal'), protein: getN('nfProtein'), fat: getN('nfFat'), carb: getN('nfCarb'), sugar: getN('nfSugar'), sodium: getN('nfSodium'), fiber: getN('nfFiber'), per: 100 };
+      if (id) {
+        const f = state.nutfoods.find(x => x.id === id);
+        if (f) Object.assign(f, data);
+      } else {
+        state.nutfoods.push(Object.assign(blankNutFood(), data));
+      }
+      save();
+      closeModal();
+      renderNutrition();
+      toast('已保存');
+      break;
+    }
+    case 'nut-del-food': {
+      const id = t.dataset.id;
+      state.nutfoods = state.nutfoods.filter(x => x.id !== id);
+      save();
+      closeModal();
+      renderNutrition();
+      toast('已删除');
+      break;
+    }
   }
 }
 
 /* ---------------- 事件：输入 ---------------- */
 function handleInput(e) {
   const t = e.target;
-  if (t.id === 'searchBox') {
-    state.search = t.value;
-    if (state.view !== 'library') navigate('library');
-    else renderLibrary();
-    return;
-  }
+  if (t.dataset.action === 'lib-search') { state.search = t.value; renderLibrary(); return; }
+  if (t.dataset.action === 'nut-calc-search') { state.nutCalcSearch = t.value; rerenderNut(); return; }
+  if (t.dataset.action === 'nut-cal-search') { state.nutCalSearch = t.value; renderNutCalendar(); return; }
+  if (t.dataset.action === 'fav-search') { state.favSearch = t.value; renderFavorites(); return; }
+  if (t.dataset.action === 'pur-search') { state.purchaseSearch = t.value; renderPurchase(); return; }
+  if (t.dataset.action === 'filter-search') { state.filterSearch = t.value; renderFilter(); return; }
+  if (t.dataset.action === 'nut-search') { state.nutSearch = t.value; rerenderNut(); return; }
   if (t.id === 'f-name') { state.editing.name = t.value; return; }
   if (t.id === 'f-video') { state.editing.videoUrl = t.value.trim(); return; }
   if (t.classList.contains('rname')) { const b = findBlock(t.dataset.sec, t.dataset.bid); if (b) { b.name = t.value; syncText(b); } return; }
@@ -1824,6 +2829,26 @@ function handleInput(e) {
     const v = t.value === '' ? null : parseFloat(t.value);
     r.scaleAmount = (v == null || isNaN(v)) ? null : v;
     save(); return;
+  }
+  if (t.dataset.action === 'nut-search') { state.nutSearch = t.value; rerenderNut(); return; }
+  if (t.dataset.action === 'nut-imp-amt') {
+    const rid = t.dataset.rid, name = t.dataset.name;
+    const v = t.value === '' ? null : parseFloat(t.value);
+    const key = rid + '::' + name;
+    if (!state.nutManual[key]) state.nutManual[key] = { amt: null, unit: 'g' };
+    state.nutManual[key].amt = (v == null || isNaN(v)) ? null : v;
+    refreshNutResult(); return;   // 只刷新结果区，保持输入框聚焦
+  }
+  if (t.dataset.action === 'nut-scale-amt') {
+    const rid = t.dataset.id;
+    const v = t.value === '' ? null : parseFloat(t.value);
+    if (!state.nutScale[rid]) state.nutScale[rid] = { base: null, amount: null, unit: 'g' };
+    state.nutScale[rid].amount = (v == null || isNaN(v)) ? null : v;
+    if (!state.nutScale[rid].base) {
+      const r = getRecipe(rid); const opts = r ? nutBaseOptions(r) : [];
+      if (opts.length) state.nutScale[rid].base = opts[0].id;
+    }
+    refreshNutResult(); return;   // 只刷新结果区，保持输入框聚焦
   }
   if (t.dataset.action === 'p-portion-amt') {
     const r = getRecipe(t.dataset.id); if (!r) return;
@@ -1974,6 +2999,29 @@ function handleChange(e) {
     r.scaleBase = t.value; r.scaleAmount = null; save();
     if (state.purchaseSelected.includes(r.id)) recomputePurchase();
     renderPurchase(); return;
+  }
+  if (t.dataset.action === 'nut-scale-base') {
+    const rid = t.dataset.id;
+    const r = getRecipe(rid);
+    const base = r && (r.sections.ingredients || []).concat(r.sections.seasonings || []).find(b => b.id === t.value && b.kind === 'item');
+    if (!state.nutScale[rid]) state.nutScale[rid] = { base: null, amount: null, unit: 'g' };
+    state.nutScale[rid].base = t.value;
+    state.nutScale[rid].amount = null;   // 换基准后清空实际用量，等待重新填写
+    state.nutScale[rid].unit = base ? (base.unit === 'ml' ? 'ml' : 'g') : 'g';
+    rerenderNut(); return;
+  }
+  if (t.dataset.action === 'nut-scale-unit') {
+    const rid = t.dataset.id;
+    if (!state.nutScale[rid]) state.nutScale[rid] = { base: null, amount: null, unit: 'g' };
+    state.nutScale[rid].unit = t.value;
+    rerenderNut(); return;
+  }
+  if (t.dataset.action === 'nut-imp-unit') {
+    const rid = t.dataset.rid, name = t.dataset.name;
+    const key = rid + '::' + name;
+    if (!state.nutManual[key]) state.nutManual[key] = { amt: null, unit: 'g' };
+    state.nutManual[key].unit = t.value;
+    rerenderNut(); return;
   }
 }
 function init() {
