@@ -25,7 +25,7 @@
   <!-- PWA manifest（Android 用） -->
   <link rel="manifest" href="manifest.json" />
 
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=8" />
 </head>
 <body>
   <div class="app">
@@ -67,10 +67,6 @@
           <div class="crumb" id="crumb">绵绵的工作台</div>
         </div>
         <div class="brand-avatar sm" title="绵绵的工作台">🐱</div>
-        <div class="topbar-search">
-          <span class="search-ico">🔍</span>
-          <input type="search" id="searchBox" class="search-box" placeholder="搜索菜谱（名称 / 食材 / 标签）…" autocomplete="off" />
-        </div>
         <button class="topbar-sync" data-action="open-sync" title="云端同步设置（GitHub）">
           <span id="syncDot" class="sync-dot"></span>☁ 同步
         </button>
@@ -101,6 +97,6 @@
   <div class="modal-root" id="modalRoot"></div>
   <div class="toast" id="toast"></div>
 
-  <script defer src="app.js"></script>
+  <script defer src="app.js?v=8"></script>
 </body>
 </html>

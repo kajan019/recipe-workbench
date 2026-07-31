@@ -436,6 +436,14 @@ body {
 .nut-warn-list { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
 .nut-pending { background: #eef4ff; border: 1px solid #d4e2ff; border-radius: 14px; padding: 10px 14px; margin-top: 12px; font-size: 12.5px; color: #3a5a9a; }
 
+/* 页面最下方整宽提示区：缺少营养数据、无法计算热量的食材 */
+.nut-missing-banner { margin-top: 16px; background: linear-gradient(135deg, #fff6e9 0%, #ffeef2 100%); border: 1px solid #f3d3a8; border-radius: 16px; padding: 14px 18px; }
+.nmb-head { font-size: 13.5px; font-weight: 800; color: #a9621a; }
+.nmb-tip { font-size: 12px; color: #9a7042; margin: 4px 0 10px; }
+.nmb-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.nmb-item { display: inline-flex; align-items: center; gap: 6px; background: #fff; border: 1px solid #f0d9b5; border-radius: 999px; padding: 4px 6px 4px 12px; font-size: 13px; color: #8a5a16; font-weight: 600; }
+.nmb-item .tiny { padding: 2px 8px; font-size: 11px; }
+
 /* 子视图二：食物营养库 */
 .nut-searchbar { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
 .nut-searchbar .search-ico { font-size: 15px; color: var(--text-3); }
@@ -525,24 +533,28 @@ body {
 .macro-top3 { margin: 2px 0; padding: 8px 10px; background: var(--panel-2); border-radius: 12px; }
 .macro-top3[hidden] { display: none; }
 .macro-top3-head { font-size: 12px; font-weight: 700; color: var(--text-3); margin: 2px 0 4px; }
-/* 营养日历：左右分栏 */
-.nut-split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
-.nut-split-left, .nut-split-right { min-width: 0; }
-.nut-split-title { font-size: 15px; font-weight: 800; margin: 2px 0 8px; }
-.nut-cal-card { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 12px 14px; }
-.nut-cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.nut-cal-title { font-weight: 800; font-size: 15px; }
-.nut-cal-week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 4px; }
-.nut-cal-week span { text-align: center; font-size: 11px; color: var(--text-3); padding: 2px 0; }
-.nut-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
-.nut-cal-cell { position: relative; aspect-ratio: 1 / 1; display: flex; align-items: center; justify-content: center; border-radius: 10px; background: var(--panel-2); font-size: 13px; cursor: pointer; transition: background .12s ease; }
+/* 营养测算：热量可视化 + 当月日历 左右并排（等宽各半） */
+.nut-calc-top { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: stretch; margin-top: 10px; }
+.nut-calc-visual { min-width: 0; background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; }
+.nut-calc-cal { min-width: 0; }
+.nut-cal-legend { font-size: 13px; font-weight: 800; margin: 0 0 6px; text-align: left; }
+.nut-cal-card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; width: 100%; box-sizing: border-box; }
+.nut-cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.nut-cal-title { font-weight: 800; font-size: 14px; }
+.nut-cal-week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+.nut-cal-week span { text-align: center; font-size: 11px; color: var(--text-3); padding: 1px 0; }
+.nut-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; width: 100%; box-sizing: border-box; }
+.nut-cal-cell { position: relative; aspect-ratio: 1 / 1; display: flex; align-items: center; justify-content: center; border-radius: 8px; background: var(--panel-2); font-size: 12px; cursor: pointer; transition: background .12s ease; }
 .nut-cal-cell.empty { background: transparent; cursor: default; }
 .nut-cal-cell.has-rec { background: var(--brand-soft); color: var(--brand-2); font-weight: 800; }
 .nut-cal-cell.has-rec:hover { filter: brightness(1.03); }
 .nut-cal-cell.sel { box-shadow: 0 0 0 2px var(--brand) inset; }
 .nut-cal-cell:not(.empty):hover { background: var(--panel-3, #efe7f7); }
-.nut-cal-dot { position: absolute; right: 6px; bottom: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--brand); }
-.nut-cal-hint { font-size: 12px; margin: 10px 2px 2px; }
+.nut-cal-sticker {
+  position: absolute; top: -2px; right: -2px;
+  font-size: 11px; line-height: 1;
+}
+.nut-cal-hint { font-size: 11px; margin: 8px 2px 2px; text-align: center; }
 .nut-cal-daylist { margin-top: 12px; border-top: 1px dashed var(--border); padding-top: 10px; }
 .nut-cal-daytitle { font-size: 13px; margin: 0 0 8px; color: var(--text-2); }
 /* Top3 来源弹窗 */
@@ -593,7 +605,8 @@ body {
     background-position: 0 0, 14px 7px;
     background-color: #fff6f9;
   }
-  .nut-split { grid-template-columns: 1fr; gap: 12px; }
+  .nut-calc-top { grid-template-columns: 1fr; gap: 12px; }
+  .nut-calc-cal { align-items: center; }
 
   /* 隐藏桌面左侧导航 */
   .sidebar { display: none; }

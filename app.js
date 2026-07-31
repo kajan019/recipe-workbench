@@ -260,6 +260,7 @@ let state = {
 };
 let dragSrc = null;
 let nutAgg = null;       // 最近一次营养聚合结果（供点击宏量元素查看 Top3 来源）
+let nutNoFoodList = [];  // 最近一次测算中「查不到营养数据」的食材名（供底部整宽提示区）
 
 /* 内置常见食材营养（每 100g）：热量kcal / 蛋白质g / 脂肪g / 碳水g */
 const NUT_SEED = [
@@ -874,7 +875,6 @@ const NAV = [
     { view: 'purchase',  icon: '🛒', label: '点菜采购' },
     { view: 'filter',    icon: '🏷️', label: '菜谱分类' },
     { view: 'nutrition', icon: '🔥', label: '营养热量' },
-    { view: 'nutcal',    icon: '📅', label: '营养日历' },
     { view: 'favorites', icon: '📋', label: '菜谱收藏夹' },
   ]},
   { title: '工具', items: [
@@ -943,7 +943,6 @@ function render() {
   if (state.view === 'purchase') { renderPurchase(); return; }
   if (state.view === 'filter') { renderFilter(); return; }
   if (state.view === 'nutrition') { rerenderNut(); return; }
-  if (state.view === 'nutcal') { renderNutCalendar(); return; }
   if (state.view === 'favorites') { renderFavorites(); return; }
 }
 function setChrome(crumb, actionsHTML) {
@@ -1943,16 +1942,12 @@ function nutResultHTML() {
       <span class="ne fiber">膳食纤维 ${total.fiber}g</span>
     </div>
     <div class="macro-hint">点击三大营养素，下方展开贡献最高的 3 种食材</div>`;
-  const noFood = noFoodAll.length ? `
-    <div class="nut-warn">
-      <div>⚠️ 以下用料查不到营养数据，未计入热量（可在「食物营养库」补录）：</div>
-      <div class="nut-warn-list">${[...new Set(noFoodAll)].map(n => `<span class="nut-ov"><span class="nut-ov-name">${escHtml(n)}</span><button class="tiny" data-action="nut-add-food" data-name="${escAttr(n)}">＋补录</button></span>`).join('')}</div>
-    </div>` : '';
+  nutNoFoodList = [...new Set(noFoodAll)];   // 供底部整宽提示区使用
   const pending = pendingAll.length ? `
     <div class="nut-pending">
       ℹ️ 以下用量未填、暂未计入：${[...new Set(pendingAll)].map(n => escHtml(n)).join('、')}
     </div>` : '';
-  return ring + macros + noFood + pending;
+  return ring + macros + pending;
 }
 
 /* 仅刷新营养结果区（保持选购行的输入框聚焦，不整页重渲染） */
@@ -1960,6 +1955,8 @@ function refreshNutResult() {
   const el = document.getElementById('nutResult');
   if (!el) { rerenderNut(); return; }
   el.innerHTML = nutResultHTML();
+  const b = document.getElementById('nutMissingBanner');
+  if (b) { b.innerHTML = nutMissingBannerHTML(); b.hidden = !nutNoFoodList.length; }
 }
 
 /* 点击宏量元素：在对应元素下方内联展开/收起「来源最高的 3 种食材」（不弹窗） */
@@ -1979,6 +1976,7 @@ function toggleNutMacro(el) {
 }
 
 function renderNutCalc() {
+  nutNoFoodList = [];   // 先清空，勾选测算后由 nutResultHTML 重新填充
   const recipes = state.recipes;
   if (!recipes.length) {
     return `<div class="nut-calc"><div class="nut-empty"><div class="ico">🔥</div><p>还没有菜谱，先去「菜谱库」添加几道菜，再来测算热量吧。</p></div></div>`;
@@ -2023,15 +2021,35 @@ function renderNutCalc() {
         </div>
       </div>
       <div class="nut-sel-list">${selList}</div>
-      <div id="nutResult">${hasSel ? nutResultHTML() : `<div class="nut-empty"><div class="ico">🍳</div><p>勾选上方菜谱，自动按用量实时汇总热量与营养。</p></div>`}</div>
+      <div class="nut-calc-top">
+        <div class="nut-calc-visual">
+          <div class="nut-cal-legend">🔥 今日热量可视化</div>
+          <div id="nutResult">${hasSel ? nutResultHTML() : `<div class="nut-empty"><div class="ico">🍳</div><p>勾选上方菜谱，自动按用量实时汇总热量与营养。</p></div>`}</div>
+        </div>
+        <div class="nut-calc-cal">
+          ${nutMonthCalendarHTML()}
+        </div>
+      </div>
+      <div id="nutMissingBanner" class="nut-missing-banner"${(hasSel && nutNoFoodList.length) ? '' : ' hidden'}>${nutMissingBannerHTML()}</div>
       ${recDetail}
       ${recList}
     </div>`;
 }
 
-/* ---- 营养日历：左右分栏（左=可视化，右=可点击日历） ---- */
+/* 缺营养数据提示区：展示查不到营养数据、无法计算热量的食材（置于「热量记录」上方；未选菜谱或无缺数据食材时由外层 hidden 隐藏） */
+function nutMissingBannerHTML() {
+  if (!nutNoFoodList.length) return '';
+  return `
+      <div class="nmb-head">⚠️ 以下食材缺少营养数据，无法计算热量（未计入统计）</div>
+      <div class="nmb-tip">提示：可点「＋补录」添加到食物营养库，补齐后下次测算即可计入。</div>
+      <div class="nmb-list">
+        ${nutNoFoodList.map(n => `<span class="nmb-item"><span class="nmb-name">${escHtml(n)}</span><button class="tiny" data-action="nut-add-food" data-name="${escAttr(n)}">＋补录</button></span>`).join('')}
+      </div>`;
+}
 
-/* 菜谱勾选列表 HTML（营养测算与营养日历左栏共用）；受 nutCalcSearch 过滤（仅本模块搜索） */
+/* ---- 当月热量日历（嵌入「菜谱测算」顶部右栏；有记录的日期用🍓标记，点日期看当日记录） ---- */
+
+/* 菜谱勾选列表 HTML（营养测算用）；受 nutCalcSearch 过滤（仅本模块搜索） */
 function nutSelListHTML() {
   const q = (state.nutCalcSearch || '').trim();
   const recipes = q ? state.recipes.filter(r => recipeMatches(r, q)) : state.recipes;
@@ -2120,26 +2138,18 @@ function deleteNutRecord(id) {
   save();
 }
 
-/* 营养相关视图统一重渲染：在「营养日历」里渲染日历，否则渲染测算 */
+/* 营养相关视图统一重渲染（含嵌入的当月热量日历） */
 function rerenderNut() {
-  if (state.view === 'nutcal') renderNutCalendar();
-  else renderNutrition();
+  renderNutrition();
 }
 
-function renderNutCalendar() {
-  if (!state.recipes.length) {
-    return `<div class="nut-calc"><div class="nut-empty"><div class="ico">🔥</div><p>还没有菜谱，先去「菜谱库」添加几道菜，再来做营养日历吧。</p></div></div>`;
-  }
+function nutMonthCalendarHTML() {
   if (!state.nutCal) state.nutCal = { y: new Date().getFullYear(), m: new Date().getMonth() };
   const { y, m } = state.nutCal;
   const startW = new Date(y, m, 1).getDay();
   const days = new Date(y, m + 1, 0).getDate();
   const recDates = {};
   state.nutRecords.forEach(r => { if (r.date) recDates[r.date] = (recDates[r.date] || 0) + 1; });
-  const calQ = (state.nutCalSearch || '').trim().toLowerCase();
-  const matchedRecs = calQ ? state.nutRecords.filter(r => (r.date || '').toLowerCase().includes(calQ) || (r.recipes || []).some(x => (x.name || '').toLowerCase().includes(calQ))) : [];
-  const matchedDates = {};
-  matchedRecs.forEach(r => { if (r.date) matchedDates[r.date] = true; });
   let cells = '';
   for (let i = 0; i < startW; i++) cells += `<div class="nut-cal-cell empty"></div>`;
   for (let d = 1; d <= days; d++) {
@@ -2148,10 +2158,9 @@ function renderNutCalendar() {
     const sel = state.nutCalSel === ds ? ' sel' : '';
     let cls = 'nut-cal-cell';
     if (cnt) cls += ' has-rec';
-    if (calQ && cnt) cls += matchedDates[ds] ? ' match' : ' dim';
     cls += sel;
     cells += `<div class="${cls}" data-action="nut-cal-day" data-date="${ds}">
-      <span class="nut-cal-num">${d}</span>${cnt ? `<span class="nut-cal-dot" title="${cnt} 条记录"></span>` : ''}</div>`;
+      <span class="nut-cal-num">${d}</span>${cnt ? `<span class="nut-cal-sticker" title="${cnt} 条记录">🍓${cnt > 1 ? cnt : ''}</span>` : ''}</div>`;
   }
   const monthLabel = `${y}年${m + 1}月`;
   const dayRecords = state.nutCalSel
@@ -2170,54 +2179,20 @@ function renderNutCalendar() {
           <div class="nut-rec-sub">${rec.recipes.map(x => escHtml(x.name)).join('、') || '—'}</div>
         </div>`).join('')}</div>` : '<p class="dim">这一天还没有热量记录。</p>'}
       ${selRec ? nutRecDetailHTML(selRec) : ''}
-    </div>` : `<p class="nut-cal-hint dim">点击带 ● 标记的日期，查看当日的热量记录。</p>`;
-
-  const selected = state.nutSelRecipes.map(id => getRecipe(id)).filter(Boolean);
-  const hasSel = selected.length > 0;
+    </div>` : `<p class="nut-cal-hint dim">点击带 🍓 的日期，查看当日的记录。</p>`;
   return `
-    <div class="nut-split">
-      <div class="nut-split-left">
-        <div class="nut-split-title">📊 营养可视化（今日测算）</div>
-        <div class="nut-select-head">
-          <div class="nut-select-acts">
-            <button class="tiny" data-action="nut-all">全选</button>
-            <button class="tiny" data-action="nut-reset">↻ 重置</button>
-            <button class="btn sm primary" data-action="nut-record" ${hasSel ? '' : 'disabled'}>📝 保存为 ${todayStr()} 记录</button>
-          </div>
-        </div>
-        <div class="nut-sel-list">${nutSelListHTML()}</div>
-        <div id="nutResult">${hasSel ? nutResultHTML() : `<div class="nut-empty"><div class="ico">🍳</div><p>勾选上方菜谱，自动按用量实时汇总热量与营养。</p></div>`}</div>
+    <div class="nut-cal-card">
+      <div class="nut-cal-legend">📅 本月热量日历</div>
+      <div class="nut-cal-head">
+        <button class="tiny" data-action="nut-cal-prev">◀</button>
+        <span class="nut-cal-title">${monthLabel}</span>
+        <button class="tiny" data-action="nut-cal-next">▶</button>
       </div>
-      <div class="nut-split-right">
-        <div class="nut-cal-card">
-          <div class="mod-searchbar nut-cal-searchbar">
-            <span class="search-ico">🔍</span>
-            <input id="nutCalSearch" class="search-box" placeholder="搜索记录（菜谱名 / 日期 如 07-31）" value="${escAttr(state.nutCalSearch || '')}" data-action="nut-cal-search"/>
-          </div>
-          <div class="nut-cal-head">
-            <button class="tiny" data-action="nut-cal-prev">◀</button>
-            <span class="nut-cal-title">${monthLabel}</span>
-            <button class="tiny" data-action="nut-cal-next">▶</button>
-          </div>
-          <div class="nut-cal-week">
-            ${['日', '一', '二', '三', '四', '五', '六'].map(w => `<span>${w}</span>`).join('')}
-          </div>
-          <div class="nut-cal-grid">${cells}</div>
-          ${calQ ? `
-            <div class="nut-cal-searchres">
-              <h4 class="nut-cal-daytitle">🔍 搜索结果（${matchedRecs.length}）</h4>
-              ${matchedRecs.length ? `<div class="nut-rec-list">${matchedRecs.slice().sort((a, b) => String(b.date).localeCompare(String(a.date))).map(rec => `
-                <div class="nut-rec" data-action="nut-cal-result" data-date="${escAttr(rec.date)}" data-id="${escAttr(rec.id)}">
-                  <div class="nut-rec-main">
-                    <span class="nut-rec-k">${rec.total.kcal} 千卡</span>
-                    <span class="nut-rec-t">${escHtml(rec.date || '')}</span>
-                  </div>
-                  <div class="nut-rec-sub">${rec.recipes.map(x => escHtml(x.name)).join('、') || '—'}</div>
-                </div>`).join('')}</div>` : '<p class="dim">没有匹配的记录。</p>'}
-            </div>` : ''}
-          ${dayList}
-        </div>
+      <div class="nut-cal-week">
+        ${['日', '一', '二', '三', '四', '五', '六'].map(w => `<span>${w}</span>`).join('')}
       </div>
+      <div class="nut-cal-grid">${cells}</div>
+      ${dayList}
     </div>`;
 }
 
@@ -2714,22 +2689,17 @@ async function handleClick(e) {
     case 'nut-cal-prev': {
       if (!state.nutCal) state.nutCal = { y: new Date().getFullYear(), m: new Date().getMonth() };
       let { y, m } = state.nutCal; m--; if (m < 0) { m = 11; y--; }
-      state.nutCal = { y, m }; render(); break;
+      state.nutCal = { y, m }; rerenderNut(); break;
     }
     case 'nut-cal-next': {
       if (!state.nutCal) state.nutCal = { y: new Date().getFullYear(), m: new Date().getMonth() };
       let { y, m } = state.nutCal; m++; if (m > 11) { m = 0; y++; }
-      state.nutCal = { y, m }; render(); break;
+      state.nutCal = { y, m }; rerenderNut(); break;
     }
     case 'nut-cal-day': {
       state.nutCalSel = t.dataset.date;
       state.nutRecView = null;
-      render(); break;
-    }
-    case 'nut-cal-result': {
-      state.nutCalSel = t.dataset.date;
-      state.nutRecView = t.dataset.id;
-      render(); break;
+      rerenderNut(); break;
     }
     case 'nut-record': {
       const rec = genNutRecord();
@@ -2750,7 +2720,6 @@ async function handleClick(e) {
       save(); rerenderNut(); break;
     case 'nut-rec-apply': {
       applyNutRecord(t.dataset.id);
-      if (state.view === 'nutcal') { state.view = 'nutrition'; state.nutView = 'calc'; }
       rerenderNut(); toast('已套用该记录的菜谱与用量'); break;
     }
     case 'nut-import': openNutImportModal(); break;
@@ -2806,7 +2775,6 @@ function handleInput(e) {
   const t = e.target;
   if (t.dataset.action === 'lib-search') { state.search = t.value; renderLibrary(); return; }
   if (t.dataset.action === 'nut-calc-search') { state.nutCalcSearch = t.value; rerenderNut(); return; }
-  if (t.dataset.action === 'nut-cal-search') { state.nutCalSearch = t.value; renderNutCalendar(); return; }
   if (t.dataset.action === 'fav-search') { state.favSearch = t.value; renderFavorites(); return; }
   if (t.dataset.action === 'pur-search') { state.purchaseSearch = t.value; renderPurchase(); return; }
   if (t.dataset.action === 'filter-search') { state.filterSearch = t.value; renderFilter(); return; }
