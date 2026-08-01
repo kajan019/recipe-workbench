@@ -688,6 +688,11 @@ body {
   /* 内容区收窄留白 */
   .content { padding: 14px 14px 20px; overflow: visible; }
   .editor { padding: 0; }
+  /* iOS Safari：输入框字号 <16px 时聚焦会自动放大页面，输入完需手动缩小。
+     用 !important 兜底，确保任何带小数号类的输入框（.nut-serv/.ramount/.runit 等）
+     在手机端都强制 16px，彻底消除聚焦放大行为。
+     viewport 同时设 maximum-scale=1 + user-scalable=no，连手动双指缩放也禁用，页面大小固定。 */
+  input, textarea, select { font-size: 16px !important; }
 
   /* ---- 概览卡（核心视觉，匹配参考图紫卡） ---- */
   .hero-card {
@@ -1096,7 +1101,7 @@ body {
 .view-sec h3 { margin: 0 0 10px; font-size: 15px; }
 .view-list { display: flex; flex-direction: column; gap: 6px; }
 /* 只读模式：食材/调味料按屏幕宽度自动分列（窄屏单列，宽屏多列） */
-.view-list.cols { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.view-list.cols { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
 .view-item, .view-step { font-size: 14px; padding: 4px 0; border-bottom: 1px dashed var(--border); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 /* 步骤 1234 编号 */
 .view-step .step-no { flex: 0 0 auto; min-width: 22px; height: 22px; line-height: 22px; text-align: center; border-radius: 50%; background: var(--accent); color: #fff; font-size: 12px; font-weight: 600; }
@@ -1104,8 +1109,12 @@ body {
 .view-note { font-size: 13px; color: var(--amber); background: var(--amber-soft); border-radius: 6px; padding: 6px 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .view-empty { color: var(--text-3); }
 .v-thumb { width: 42px; height: 42px; border-radius: 6px; border: 1px solid var(--border); background-size: cover; background-position: center; cursor: zoom-in; flex: 0 0 auto; }
+/* 只读模式：带图的烹饪步骤，文字与图片左右分栏；图片高度固定 4 行文字，放大并保持一致 */
+.view-step.has-img { flex-wrap: nowrap; align-items: center; }
+.view-step.has-img .step-text { align-self: center; }
+.view-step.has-img .v-thumb { width: auto; height: calc(1.55em * 4); aspect-ratio: 1 / 1; border-radius: 8px; cursor: zoom-in; }
 .view-group { margin-bottom: 8px; }
-.view-group-title { font-weight: 600; font-size: 13px; color: var(--text-2); margin-bottom: 4px; }
+.view-group-title { font-weight: 600; font-size: 13px; color: var(--brand-2); background: var(--brand-soft); padding: 3px 10px; border-radius: 999px; margin-bottom: 6px; display: inline-block; }
 
 /* 分点后按屏幕宽度自动分列（食材/调味料） */
 .rows.cols {
@@ -1116,7 +1125,12 @@ body {
 }
 .rows.cols .ritem { margin-bottom: 0; }
 .rows.list { display: block; }
-.rline { flex-wrap: wrap; }
+/* 编辑模式：食材/调味行的「名称·用量·单位」强制同一行（不跨行）；步骤/备注含多行输入则允许换行 */
+.ritem.mat .rline { flex-wrap: nowrap; }
+.ritem.mat .rname { flex: 1 1 auto; min-width: 0; }
+.ritem.mat .ramount, .ritem.mat .runit { flex: 0 0 auto; }
+.ritem.mat .r-imgs { flex: 0 1 auto; min-width: 0; }
+.ritem.step .rline, .ritem.note .rline { flex-wrap: wrap; }
 
 /* 裁剪选区弹窗 */
 .crop-modal { background: var(--panel); border-radius: var(--radius); padding: 16px 18px; max-width: 92vw; max-height: 90vh; display: flex; flex-direction: column; gap: 12px; }

@@ -792,7 +792,7 @@ function cropConfirm() {
   const c = document.createElement('canvas');
   c.width = Math.max(1, Math.round(w * sx)); c.height = Math.max(1, Math.round(h * sy));
   c.getContext('2d').drawImage(img, left * sx, top * sy, w * sx, h * sy, 0, 0, c.width, c.height);
-  const out = c.toDataURL('image/jpeg', 0.85);
+  const out = c.toDataURL('image/jpeg', 0.72);
   cropCtx.finish(out);
 }
 /* 多图批量裁剪：逐张选区，全部完成后再写入条目 */
@@ -1109,7 +1109,7 @@ function openFavForm(mode, c) {
   const fileInp = document.getElementById('favCoverFile');
   if (fileInp) fileInp.addEventListener('change', async (e) => {
     const f = e.target.files && e.target.files[0]; if (!f) return;
-    try { favCoverImg = await compressImage(f, 1280, 0.82); renderFavCoverPreview(); } catch (_) {}
+    try { favCoverImg = await compressImage(f, 1280, 0.72); renderFavCoverPreview(); } catch (_) {}
   });
   const urlInp = document.getElementById('favCoverUrl');
   if (urlInp) urlInp.addEventListener('input', () => { favCoverImg = urlInp.value.trim(); renderFavCoverPreview(); });
@@ -1257,7 +1257,8 @@ function viewListHTML(arr, structured, factor) {
     }
     stepNo += 1;
     const imgs = (b.images || []).map((img, idx) => `<span class="v-thumb" style="background-image:url('${img}')" data-action="enlarge-view" data-bid="${b.id}" data-idx="${idx}"></span>`).join('');
-    return `<div class="view-step"><span class="step-no">${stepNo}</span><span class="step-text">${escHtml(b.text)}</span>${imgs}</div>`;
+    const hasImgCls = imgs ? ' has-img' : '';
+    return `<div class="view-step${hasImgCls}"><span class="step-no">${stepNo}</span><span class="step-text">${escHtml(b.text)}</span>${imgs}</div>`;
   }).join('') + `</div>`;
 }
 
@@ -1380,7 +1381,7 @@ function materialRowHTML(key, b, i, last) {
   const imgs = (b.images || []).map((img, idx) => thumbHTML(key, b.id, idx, img)).join('');
   const listAttr = key === 'seasonings' ? 'list="seasoning-list"' : '';
   return `
-    <div class="ritem" data-row data-sec="${key}" data-bid="${b.id}" tabindex="0">
+    <div class="ritem mat" data-row data-sec="${key}" data-bid="${b.id}" tabindex="0">
       <div class="rline">
         <span class="grip" title="按住拖拽排序">⠿</span>
         <span class="idx">${i + 1}</span>
@@ -1402,7 +1403,7 @@ function materialRowHTML(key, b, i, last) {
 function stepRowHTML(key, b, i, last) {
   const imgs = (b.images || []).map((img, idx) => thumbHTML(key, b.id, idx, img)).join('');
   return `
-    <div class="ritem" data-row data-sec="${key}" data-bid="${b.id}" tabindex="0">
+    <div class="ritem step" data-row data-sec="${key}" data-bid="${b.id}" tabindex="0">
       <div class="rline">
         <span class="grip" title="按住拖拽排序">⠿</span>
         <span class="idx">${i + 1}</span>
@@ -2661,7 +2662,7 @@ async function handleClick(e) {
     case 'cover-camera': {
       const files = await pickFiles({ multiple: false, capture: a === 'cover-camera' });
       if (files && files[0]) {
-        const src = await compressImage(files[0], 1280, 0.82);
+        const src = await compressImage(files[0], 1280, 0.72);
         openCrop(null, null, src, (out) => { state.editing.cover = out; refreshHeader(); });
       }
       break;
@@ -2701,7 +2702,7 @@ async function handleClick(e) {
       const files = await pickFiles({ multiple: true });
       if (files && files.length) {
         const imgs = [];
-        for (const f of files) imgs.push(await compressImage(f, 1600, 0.8));
+        for (const f of files) imgs.push(await compressImage(f, 1280, 0.72));
         startCropQueue(t.dataset.sec, t.dataset.bid, imgs);
       }
       break;
@@ -3178,6 +3179,7 @@ function cleanupDrag() {
   dragSrc = null;
 }
 function initDrag() {
+  if ('ontouchstart' in window || navigator.maxTouchPoints > 0) return; // 触摸设备（手机/平板）不支持原生拖拽且会干扰点击，排序改用 ↑↓ 按钮
   const content = $('content');
   content.addEventListener('mousedown', (e) => {
     const grip = e.target.closest('.grip');
