@@ -443,6 +443,7 @@ function migrateRecipe(r) {
   if (r.scaleAmount === undefined) r.scaleAmount = null;
   if (r.videoUrl === undefined) r.videoUrl = '';
   if (!r.sections.prep) r.sections.prep = [];
+  r.sections.prep.forEach(g => { if (g.img === undefined) g.img = null; });   // 备菜组图片（向后兼容：旧数据默认无图）
   ['ingredients', 'seasonings'].forEach(sec => {
     (r.sections[sec] || []).forEach(b => {
       if (b.kind === 'item' && b.name === undefined) {
@@ -1235,7 +1236,8 @@ function viewPrepHTML(r, factor) {
       const text = [name, amtText, form].filter(Boolean).join(' ');
       return `<div class="view-item">${escHtml(text)}</div>`;
     }).join('');
-    return `<div class="view-group"><div class="view-group-title">${escHtml(g.title || '备菜')}</div><div class="view-list cols">${members || '<div class="view-empty">（无）</div>'}</div></div>`;
+    const imgHTML = g.img ? `<div class="v-thumb" style="background-image:url('${escAttr(g.img)}')" data-action="enlarge-prep-img" data-gid="${escAttr(g.id)}"></div>` : '';
+    return `<div class="view-group"><div class="view-group-title"><span class="vgt-pill">${escHtml(g.title || '备菜')}</span>${imgHTML}</div><div class="view-list cols">${members || '<div class="view-empty">（无）</div>'}</div></div>`;
   }).join('') + `</div>`;
 }
 function viewListHTML(arr, structured, factor) {
@@ -1480,12 +1482,15 @@ function prepGroupHTML(g) {
         <button class="tiny danger" data-action="prep-del-member" data-gid="${g.id}" data-ref="${escAttr(m.refId)}" title="移除">×</button>
       </div>`;
   }).join('');
+  const imgBox = `<div class="prep-g-img ${g.img ? 'has' : ''}" data-action="prep-group-img" data-gid="${g.id}" style="${g.img ? `background-image:url('${escAttr(g.img)}')` : ''}">${g.img ? '' : '＋ 图片'}</div>`;
   return `
     <div class="prep-group">
       <div class="prep-group-head">
         <input class="prep-g-title" data-gid="${g.id}" value="${escAttr(g.title || '')}" placeholder="备菜组名称">
+        ${imgBox}
         <button class="tiny danger" data-action="prep-del-group" data-gid="${g.id}">删除组</button>
       </div>
+      ${g.img ? `<button class="tiny danger prep-g-img-del" data-action="prep-group-img-del" data-gid="${g.id}">删除图片</button>` : ''}
       <div class="prep-members">${members || '<div class="prep-empty">尚未选择用料</div>'}</div>
       <button class="add-btn sm" data-action="prep-add-member" data-gid="${g.id}">＋ 从食材/调味料选择</button>
     </div>`;
@@ -1666,8 +1671,9 @@ function renderFilter() {
     `<span class="chip cook ${f.cook.includes(t) ? 'on' : ''}" data-action="filter-toggle" data-type="cook" data-tag="${escAttr(t)}">${t}</span>`).join('');
 
   let results = state.recipes;
-  if (f.cat.length) results = results.filter(r => r.categories.some(c => f.cat.includes(c)));
-  if (f.cook.length) results = results.filter(r => r.cookings.some(c => f.cook.includes(c)));
+  // 多选标签时要求“同时满足”所有选中标签（AND 逻辑）：选中多个标签只显示全部带有的菜谱
+  if (f.cat.length) results = results.filter(r => f.cat.every(t => r.categories.includes(t)));
+  if (f.cook.length) results = results.filter(r => f.cook.every(t => r.cookings.includes(t)));
   const q = (state.filterSearch || '').trim().toLowerCase();
   if (q) results = results.filter(r => (r.name || '').toLowerCase().includes(q) || r.categories.join('/').toLowerCase().includes(q));
 
@@ -1718,10 +1724,28 @@ function nutBaseOptions(r) {
 function nutImpreciseOptions(r) {
   return (r.sections.ingredients || []).concat(r.sections.seasonings || []).filter(b => b.kind === 'item' && b.name && !nutIsAccurate(b));
 }
-/* 由「基准食材实际用量」推算整道菜缩放倍率（替代份数） */
+/* 菜谱“写成时”的总重量（所有食材+调味料中可折算成克的用量之和，单位 g）；个/勺/适量等无克重的不计入 */
+function nutTotalWeight(r) {
+  let total = 0;
+  (r.sections.ingredients || []).concat(r.sections.seasonings || []).forEach(b => {
+    if (b.kind !== 'item' || !b.name) return;
+    if (nutIsAccurate(b)) { const g = unitToGrams(b.amount, b.unit); if (g != null) total += g; }
+  });
+  return total;
+}
+/* 推算整道菜缩放倍率（替代份数）：
+ *  - 基准食材模式（默认）：按「基准食材实际用量 ÷ 基准记录克重」等比缩放；
+ *  - 基准份量模式：按「实际克重 ÷ 总重量」等比缩放热量。 */
 function nutScaleFactorOf(r) {
   const sc = state.nutScale[r.id];
-  if (!sc || !sc.base || sc.amount == null || isNaN(sc.amount) || sc.amount <= 0) return 1;
+  if (!sc) return 1;
+  if (sc.mode === 'portion') {
+    const total = nutTotalWeight(r);
+    const actual = sc.actual;
+    if (!total || total <= 0 || actual == null || isNaN(actual) || actual <= 0) return 1;
+    return actual / total;
+  }
+  if (!sc.base || sc.amount == null || isNaN(sc.amount) || sc.amount <= 0) return 1;
   const base = (r.sections.ingredients || []).concat(r.sections.seasonings || []).find(b => b.id === sc.base && b.kind === 'item');
   if (!base) return 1;
   const baseG = unitToGrams(base.amount, base.unit);
@@ -1833,30 +1857,56 @@ function todayStr(d) {
 }
 
 /* ---- 子视图一：菜谱营养测算（多选共同计算 + 分量调整 + 记录） ---- */
-/* 基准食材缩放控件（替代份数：输入某食材实际用量，整道菜等比例缩放） */
+/* 缩放控件（替代份数）：支持「基准食材」与「基准份量」二选一 */
 function nutScaleControlHTML(r) {
-  const opts = nutBaseOptions(r);
-  if (!opts.length) return `<div class="nut-scale nut-scale-hint">该菜谱没有记录准确用量的食材，无法按基准缩放（可在菜谱里给食材填克 / 毫升）</div>`;
-  const sc = state.nutScale[r.id];
-  const baseId = (sc && sc.base && opts.some(o => o.id === sc.base)) ? sc.base : opts[0].id;
-  const base = opts.find(o => o.id === baseId);
-  const baseG = unitToGrams(base.amount, base.unit);
-  const amount = sc ? sc.amount : null;
-  const unit = (sc && sc.unit) ? sc.unit : (base.unit === 'ml' ? 'ml' : 'g');
-  const factor = nutScaleFactorOf(r);
-  const optHTML = opts.map(o => `<option value="${escAttr(o.id)}" ${o.id === baseId ? 'selected' : ''}>${escHtml(o.name)} ${o.amount}${escHtml(o.unit || '')}</option>`).join('');
-  return `
-    <div class="nut-scale">
-      <span class="nut-scale-label">基准食材</span>
-      <select class="nut-scale-base" data-action="nut-scale-base" data-id="${escAttr(r.id)}">${optHTML}</select>
-      <span class="nut-scale-eq">实际</span>
-      <input class="nut-scale-amt" type="number" step="any" min="0" data-action="nut-scale-amt" data-id="${escAttr(r.id)}" value="${amount != null ? amount : ''}" placeholder="${baseG != null ? baseG : ''}"/>
-      <select class="nut-scale-unit" data-action="nut-scale-unit" data-id="${escAttr(r.id)}">
-        <option value="g" ${unit === 'g' ? 'selected' : ''}>g</option>
-        <option value="ml" ${unit === 'ml' ? 'selected' : ''}>ml</option>
-      </select>
-      ${factor !== 1 ? `<span class="nut-scale-eq">整道菜按 ${factor.toFixed(2)}× 缩放</span>` : `<span class="nut-scale-eq dim">改「实际」用量即等比缩放其它用料</span>`}
+  const rid = r.id;
+  const sc = state.nutScale[rid] || {};
+  const mode = sc.mode === 'portion' ? 'portion' : 'ingredient';
+  const toggle = `
+    <div class="nut-scale-mode">
+      <button class="nut-scale-mode-btn ${mode === 'ingredient' ? 'on' : ''}" data-action="nut-scale-mode" data-id="${escAttr(rid)}" data-mode="ingredient">基准食材</button>
+      <button class="nut-scale-mode-btn ${mode === 'portion' ? 'on' : ''}" data-action="nut-scale-mode" data-id="${escAttr(rid)}" data-mode="portion">基准份量</button>
     </div>`;
+  if (mode === 'ingredient') {
+    const opts = nutBaseOptions(r);
+    if (!opts.length) return toggle + `<div class="nut-scale nut-scale-hint">该菜谱还没有记录准确用量（克 / 毫升）的食材，无法按基准食材缩放；可改用「基准份量」，或先在菜谱里给食材填克 / 毫升。</div>`;
+    const baseId = (sc.base && opts.some(o => o.id === sc.base)) ? sc.base : opts[0].id;
+    const base = opts.find(o => o.id === baseId);
+    const baseG = unitToGrams(base.amount, base.unit);
+    const amount = sc.amount != null ? sc.amount : null;
+    const unit = (sc.unit) ? sc.unit : (base.unit === 'ml' ? 'ml' : 'g');
+    const factor = nutScaleFactorOf(r);
+    const optHTML = opts.map(o => `<option value="${escAttr(o.id)}" ${o.id === baseId ? 'selected' : ''}>${escHtml(o.name)} ${o.amount}${escHtml(o.unit || '')}</option>`).join('');
+    const ctrl = `
+      <div class="nut-scale">
+        <span class="nut-scale-label">基准食材</span>
+        <select class="nut-scale-base" data-action="nut-scale-base" data-id="${escAttr(rid)}">${optHTML}</select>
+        <span class="nut-scale-eq">实际</span>
+        <input class="nut-scale-amt" type="number" step="any" min="0" data-action="nut-scale-amt" data-id="${escAttr(rid)}" value="${amount != null ? amount : ''}" placeholder="${baseG != null ? baseG : ''}"/>
+        <select class="nut-scale-unit" data-action="nut-scale-unit" data-id="${escAttr(rid)}">
+          <option value="g" ${unit === 'g' ? 'selected' : ''}>g</option>
+          <option value="ml" ${unit === 'ml' ? 'selected' : ''}>ml</option>
+        </select>
+        ${factor !== 1 ? `<span class="nut-scale-eq">整道菜按 ${factor.toFixed(2)}× 缩放</span>` : `<span class="nut-scale-eq dim">改「实际」用量即等比缩放其它用料</span>`}
+      </div>`;
+    return toggle + ctrl;
+  }
+  // 基准份量模式：总重量（所有可折算克重的食材/调味料之和）× 实际克重 → 按 实际/总重量 比例缩放热量
+  const total = nutTotalWeight(r);
+  const actual = sc.actual != null ? sc.actual : null;
+  const factor = nutScaleFactorOf(r);
+  const ctrl = `
+    <div class="nut-scale">
+      <span class="nut-scale-label">基准份量</span>
+      <span class="nut-scale-eq">总重量</span>
+      <input class="nut-scale-total" type="number" readonly value="${total ? Math.round(total) : ''}" placeholder="0"/>
+      <span class="nut-scale-eq">g</span>
+      <span class="nut-scale-eq">实际</span>
+      <input class="nut-scale-actual" type="number" step="any" min="0" data-action="nut-scale-actual" data-id="${escAttr(rid)}" value="${actual != null ? actual : ''}" placeholder="可输入克重"/>
+      <span class="nut-scale-eq">g</span>
+      ${total <= 0 ? `<span class="nut-scale-eq dim">请先给食材 / 调味料填克或毫升</span>` : (factor !== 1 ? `<span class="nut-scale-eq">整道菜按 ${factor.toFixed(2)}× 缩放</span>` : `<span class="nut-scale-eq dim">改「实际」克重即按比例缩放热量</span>`)}
+    </div>`;
+  return toggle + ctrl;
 }
 
 /* 未记录准确用量的食材：勾选菜谱后「全部自动显示」为填写行（单位默认 g，可切 ml；留空不计入） */
@@ -2135,7 +2185,7 @@ function nutSelListHTML() {
 /* 记录详情 HTML（营养测算与营养日历共用） */
 function nutRecDetailHTML(rec) {
   const sub = rec.custom ? '自定义记录（手动添加）'
-    : '含菜谱：' + (rec.recipes || []).map(x => escHtml(x.name) + (x.scale ? `（基准 ${x.scale.amount}${x.scale.unit}）` : (x.servings != null ? `（${x.servings}份）` : ''))).join('、');
+    : '含菜谱：' + (rec.recipes || []).map(x => escHtml(x.name) + (x.scale ? (x.scale.mode === 'portion' ? `（基准份量 ${x.scale.actual != null ? x.scale.actual : ''}g）` : `（基准 ${x.scale.amount}${x.scale.unit}）`) : (x.servings != null ? `（${x.servings}份）` : ''))).join('、');
   return `
     <div class="nut-rec-detail">
       <div class="nut-rec-detail-head">
@@ -2858,6 +2908,18 @@ async function handleClick(e) {
       refreshSection('prep');
       break;
     }
+    /* 备菜组图片：点区域选图，裁剪后写入该组 */
+    case 'prep-group-img': {
+      const gid = t.dataset.gid;
+      const files = await pickFiles({ multiple: false });
+      if (files && files[0]) {
+        const src = await compressImage(files[0], 1280, 0.72);
+        openCrop(null, null, src, (out) => { const g = findPrepGroup(gid); if (g) { g.img = out; refreshSection('prep'); } });
+      }
+      break;
+    }
+    case 'prep-group-img-del': { const g = findPrepGroup(t.dataset.gid); if (g) { g.img = null; refreshSection('prep'); } break; }
+    case 'enlarge-prep-img': { const r = getRecipe(state.viewId); const g = r && r.sections.prep.find(x => x.id === t.dataset.gid); if (g && g.img) showImage(g.img); break; }
 
     /* ===== 营养热量模块 ===== */
     case 'nut-tab': state.nutView = t.dataset.v; rerenderNut(); break;
@@ -2865,6 +2927,13 @@ async function handleClick(e) {
       const id = t.dataset.id;
       if (state.nutSelRecipes.includes(id)) state.nutSelRecipes = state.nutSelRecipes.filter(x => x !== id);
       else state.nutSelRecipes.push(id);
+      rerenderNut(); break;
+    }
+    /* 基准缩放模式切换：基准食材 / 基准份量 二选一 */
+    case 'nut-scale-mode': {
+      const rid = t.dataset.id, mode = t.dataset.mode;
+      if (!state.nutScale[rid]) state.nutScale[rid] = { base: null, amount: null, unit: 'g' };
+      state.nutScale[rid].mode = mode;
       rerenderNut(); break;
     }
     case 'nut-all': state.nutSelRecipes = state.recipes.map(r => r.id); rerenderNut(); break;
@@ -3067,6 +3136,13 @@ function handleInput(e) {
       const r = getRecipe(rid); const opts = r ? nutBaseOptions(r) : [];
       if (opts.length) state.nutScale[rid].base = opts[0].id;
     }
+    refreshNutResult(); return;   // 只刷新结果区，保持输入框聚焦
+  }
+  if (t.dataset.action === 'nut-scale-actual') {
+    const rid = t.dataset.id;
+    const v = t.value === '' ? null : parseFloat(t.value);
+    if (!state.nutScale[rid]) state.nutScale[rid] = { base: null, amount: null, unit: 'g' };
+    state.nutScale[rid].actual = (v == null || isNaN(v)) ? null : v;
     refreshNutResult(); return;   // 只刷新结果区，保持输入框聚焦
   }
   if (t.dataset.action === 'p-portion-amt') {

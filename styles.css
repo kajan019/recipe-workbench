@@ -502,6 +502,11 @@ body {
 .nut-scale-eq { color: var(--text-3); }
 .nut-scale-eq.dim { font-size: 11px; }
 .nut-scale select, .nut-scale input { padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); font-size: 12px; font-family: inherit; }
+/* 基准缩放模式切换（基准食材 / 基准份量 二选一） */
+.nut-scale-mode { display: flex; gap: 6px; margin-bottom: 8px; }
+.nut-scale-mode-btn { flex: 1; padding: 7px 0; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--panel); color: var(--text-2); font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+.nut-scale-mode-btn.on { background: linear-gradient(135deg, var(--brand-2), var(--pink)); color: #fff; border-color: transparent; }
+.nut-scale-total { width: 64px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel-2); color: var(--text-2); font-family: inherit; font-size: 12px; text-align: center; }
 .nut-scale .nut-scale-amt { width: 72px; }
 .nut-scale-hint { font-size: 12px; color: var(--text-3); }
 /* 未记录用量的食材：下拉框 + 手动填写 */
@@ -1114,7 +1119,9 @@ body {
 .view-step.has-img .step-text { align-self: center; }
 .view-step.has-img .v-thumb { width: auto; height: calc(1.55em * 4); aspect-ratio: 1 / 1; border-radius: 8px; cursor: zoom-in; }
 .view-group { margin-bottom: 8px; }
-.view-group-title { font-weight: 600; font-size: 13px; color: var(--brand-2); background: var(--brand-soft); padding: 3px 10px; border-radius: 999px; margin-bottom: 6px; display: inline-block; }
+.view-group-title { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.vgt-pill { font-weight: 600; font-size: 13px; color: var(--brand-2); background: var(--brand-soft); padding: 3px 10px; border-radius: 999px; }
+.view-group-title .v-thumb { width: 36px; height: 36px; flex: 0 0 auto; margin: 0; }
 
 /* 分点后按屏幕宽度自动分列（食材/调味料） */
 .rows.cols {
@@ -1158,6 +1165,10 @@ body {
 .prep-group { background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 12px; }
 .prep-group-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .prep-g-title { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; }
+/* 备菜组图片（标题行右侧的小缩略图） */
+.prep-g-img { width: 40px; height: 40px; border-radius: 8px; border: 1px dashed var(--border-strong); background-color: var(--panel-2); background-size: cover; background-position: center; display: flex; align-items: center; justify-content: center; color: var(--text-3); font-size: 16px; line-height: 1; cursor: pointer; flex: 0 0 auto; }
+.prep-g-img.has { border-style: solid; border-color: transparent; }
+.prep-g-img-del { align-self: flex-start; margin: -2px 0 8px; }
 .prep-members { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
 .prep-member { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .prep-member .pm-qty { width: 72px; }
