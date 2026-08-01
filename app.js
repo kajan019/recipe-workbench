@@ -1390,8 +1390,8 @@ function materialRowHTML(key, b, i, last) {
         <input class="rname" ${listAttr} data-sec="${key}" data-bid="${b.id}" value="${escAttr(b.name || '')}" placeholder="名称">
         <input class="ramount" type="number" step="0.5" data-sec="${key}" data-bid="${b.id}" value="${b.amount == null ? '' : b.amount}" placeholder="用量">
         <input class="runit" list="unit-list" data-sec="${key}" data-bid="${b.id}" value="${escAttr(b.unit || '')}" placeholder="单位">
-        <div class="r-imgs">${imgs}</div>
       </div>
+      <div class="r-imgs">${imgs}</div>
       <div class="ractions">
         <button class="tiny" data-action="add-image" data-sec="${key}" data-bid="${b.id}">🖼️ 图片</button>
         <button class="tiny" data-action="ins-note-above" data-sec="${key}" data-bid="${b.id}">📝 备注↑</button>
