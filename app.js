@@ -566,8 +566,17 @@ async function githubPull() {
   const apiPath = '/contents/' + syncPath(cfg) + '?ref=' + syncBranch(cfg);
   const res = await githubApi(apiPath);
   const j = await res.json();
-  if (!j.content) throw new Error('云端文件为空');
-  const txt = decodeURIComponent(escape(atob(j.content.replace(/\s/g, ''))));
+  let txt;
+  if (j.content) {
+    txt = decodeURIComponent(escape(atob(j.content.replace(/\s/g, ''))));
+  } else if (j.sha) {
+    // GitHub 限制：单文件 >1MB 时 contents 接口不返回 content，需改用 git blob 接口读取
+    const bj = await (await githubApi('/git/blobs/' + j.sha)).json();
+    if (!bj.content) throw new Error('云端文件读取失败（可能过大或路径不正确：' + syncPath(cfg) + '@' + syncBranch(cfg) + '）');
+    txt = decodeURIComponent(escape(atob(bj.content.replace(/\s/g, ''))));
+  } else {
+    throw new Error('云端文件为空（或路径/分支不正确：' + syncPath(cfg) + '@' + syncBranch(cfg) + '）');
+  }
   const data = JSON.parse(txt);
   if (Array.isArray(data.recipes)) state.recipes = data.recipes.map(migrateRecipe);
   if (Array.isArray(data.collections)) state.collections = data.collections.map(migrateCollection);
