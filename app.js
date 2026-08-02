@@ -3321,7 +3321,35 @@ async function handleClick(e) {
       if (n) { memoEditBackup = JSON.parse(JSON.stringify(n)); memoEditIsNew = false; state.memoEditId = n.id; memoListScroll = captureMemoScroll(); renderMemo(); }
       break;
     }
-    case 'memo-done': { memoSyncBody(); state.memoEditId = null; state.memoExpandId = null; memoEditBackup = null; memoEditIsNew = false; renderMemo(); break; }
+    case 'memo-done': {
+      memoSyncBody();   // 仅把编辑器最新内容同步进 n.body（不刷新时间）
+      const n = memoCurNote();
+      let changed = false;
+      if (n) {
+        if (memoEditIsNew) {
+          /* 新建笔记：只要产生过改动或已填写任何内容，保存时刷新时间 */
+          changed = memoDirty || !!((n.title || '').trim() || stripHtml(n.body || '').trim() || (n.cat || '') || (n.sub || ''));
+        } else if (memoEditBackup) {
+          const b = memoEditBackup;
+          changed = memoDirty
+            || (n.title || '') !== (b.title || '')
+            || (n.body || '') !== (b.body || '')
+            || (n.cat || '') !== (b.cat || '')
+            || (n.sub || '') !== (b.sub || '');
+        } else {
+          changed = memoDirty;
+        }
+        /* 只有「编辑过 + 保存」才刷新时间；只看不编 / 没改动 → 时间不动、位置不变 */
+        if (changed) {
+          n.updatedAt = Date.now();
+          /* 编辑保存过的笔记自动跳到列表最顶（ord 置为当前最小再 -1）；之后仍可用拖拽二次改变排序 */
+          const minOrd = state.memoNotes.reduce((m, x) => Math.min(m, (typeof x.ord === 'number' ? x.ord : 0)), 0);
+          n.ord = minOrd - 1;
+        }
+      }
+      state.memoEditId = null; state.memoExpandId = null; memoEditBackup = null; memoEditIsNew = false; memoDirty = false;
+      save(); renderMemo(); break;
+    }
     case 'memo-cancel': {
       if (memoEditIsNew && state.memoEditId) {
         state.memoNotes = state.memoNotes.filter(n => n.id !== state.memoEditId);
@@ -3353,10 +3381,11 @@ async function handleClick(e) {
       renderMemoList(); break;
     }
     case 'memo-subfilter-clear': { state.memoSub = ''; renderMemoList(); break; }
-    case 'memo-pick-cat': { const tag = t.dataset.tag; const n = memoCurNote(); const c = $('memoCat'); if (n && c) { c.value = tag; n.cat = tag; n.updatedAt = Date.now(); save(); } break; }
-    case 'memo-pick-sub': { const tag = t.dataset.tag; const n = memoCurNote(); const s = $('memoSub'); if (n && s) { s.value = tag; n.sub = tag; n.updatedAt = Date.now(); save(); } break; }
-    case 'memo-fav-toggle-edit': { const n = memoCurNote(); if (n) { n.fav = !n.fav; n.updatedAt = Date.now(); save(); if (t) { t.classList.toggle('on', n.fav); t.textContent = n.fav ? '★ 已收藏' : '☆ 收藏'; } } break; }
-    case 'memo-fav-toggle': { const id = t.dataset.id; const n = state.memoNotes.find(x => x.id === id); if (n) { n.fav = !n.fav; n.updatedAt = Date.now(); save(); if (t) { t.classList.toggle('on', n.fav); t.textContent = n.fav ? '★' : '☆'; } } break; }
+    case 'memo-pick-cat': { const tag = t.dataset.tag; const n = memoCurNote(); const c = $('memoCat'); if (n && c) { c.value = tag; n.cat = tag; memoDirty = true; save(); } break; }
+    case 'memo-pick-sub': { const tag = t.dataset.tag; const n = memoCurNote(); const s = $('memoSub'); if (n && s) { s.value = tag; n.sub = tag; memoDirty = true; save(); } break; }
+    /* 收藏只是标记，不是内容编辑 → 不刷新时间、不参与「编辑后置顶」排序 */
+    case 'memo-fav-toggle-edit': { const n = memoCurNote(); if (n) { n.fav = !n.fav; save(); if (t) { t.classList.toggle('on', n.fav); t.textContent = n.fav ? '★ 已收藏' : '☆ 收藏'; } } break; }
+    case 'memo-fav-toggle': { const id = t.dataset.id; const n = state.memoNotes.find(x => x.id === id); if (n) { n.fav = !n.fav; save(); if (t) { t.classList.toggle('on', n.fav); t.textContent = n.fav ? '★' : '☆'; } } break; }
     case 'memo-copy': {
       const id = t.dataset.id;
       const n = state.memoNotes.find(x => x.id === id);
@@ -3479,9 +3508,13 @@ async function handleClick(e) {
 /* ---------------- 事件：输入 ---------------- */
 /* 搜索输入：每次按键不再整页重渲染导致输入框失焦；中文输入法组合期间不重渲染，避免打不了中文 */
 const SEARCH_ACTIONS = ['lib-search', 'nut-calc-search', 'fav-search', 'pur-search', 'filter-search', 'nut-search'];
+let _searchSel = { start: 0, end: 0 };  // 记录搜索框改动前的光标区间，重渲染后恢复，避免实时筛选时光标跳到末尾（在文字中间编辑更跟手）
 function refocusSearch(action) {
   const inp = document.querySelector(`[data-action="${action}"]`);
-  if (inp) { inp.focus(); const n = inp.value.length; try { inp.setSelectionRange(n, n); } catch (_) {} }
+  if (inp) {
+    inp.focus();
+    try { inp.setSelectionRange(_searchSel.start, _searchSel.end); } catch (_) {}
+  }
 }
 function setSearchValue(action, value) {
   switch (action) {
@@ -3532,6 +3565,7 @@ function handleInput(e) {
   const t = e.target;
   if (t.dataset.action && SEARCH_ACTIONS.includes(t.dataset.action)) {
     setSearchValue(t.dataset.action, t.value);
+    try { _searchSel = { start: t.selectionStart, end: t.selectionEnd }; } catch (_) {} // 记下光标位置，重渲染后还原
     if (e.isComposing) return;            // 中文组合期间不重渲染，避免打断输入法
     scheduleSearch(t.dataset.action, t.value); // 输入即实时筛选；清空则显示全部
     return;
@@ -3823,6 +3857,7 @@ init();
 let memoLastRange = null;   // 编辑器失焦前保存的光标位置（用于图片插入归位）
 let memoEditBackup = null;  // 进入编辑器时的笔记快照（点「取消」时还原）
 let memoEditIsNew = false;  // 本次编辑器是否由「＋ 新建笔记」进入
+let memoDirty = false;      // 本次编辑器内是否产生过任意文本/标题/标签改动（用于「保存时才刷新时间」）
 
 /* ---------- 数据迁移（向后兼容：旧数据无备忘录字段时给默认空数组） ---------- */
 function migrateMemoNote(n) {
@@ -3885,8 +3920,10 @@ function memoAllSubs() {
 }
 function memoNormalizeOrd() {
   if (!state.memoNotes.some(n => typeof n.ord !== 'number')) return;
-  const sorted = state.memoNotes.slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-  sorted.forEach((n, i) => { n.ord = i; });
+  /* 只为缺失 ord 的笔记补序号（追加在现有最大 ord 之后），绝不重排已有手动/编辑顺序，避免覆盖拖拽结果 */
+  const maxOrd = state.memoNotes.reduce((m, x) => Math.max(m, (typeof x.ord === 'number' ? x.ord : -Infinity)), -Infinity);
+  let next = (maxOrd === -Infinity ? -1 : maxOrd) + 1;
+  state.memoNotes.forEach(n => { if (typeof n.ord !== 'number') n.ord = next++; });
 }
 function memoVisibleNotes() {
   memoNormalizeOrd();
@@ -3904,6 +3941,8 @@ function memoVisibleNotes() {
     (n.sub || '').toLowerCase().includes(q) ||
     (n.cat || '').toLowerCase().includes(q)
   );
+  /* 全局排序：以 ord（手动/编辑顺序）为主，updatedAt 仅作并列兜底。
+     规则：编辑保存过的笔记自动跳到最顶(ord 置最小)，拖动可二次改变顺序(ord 重排)；只看不编不改动位置。 */
   list.sort((a, b) => ((a.ord || 0) - (b.ord || 0)) || ((b.updatedAt || 0) - (a.updatedAt || 0)));
   return list;
 }
@@ -3931,7 +3970,10 @@ function memoCardBodyHtml(n) {
 }
 function noteItemHTML(n) {
   const expanded = state.memoExpandId === n.id;
-  const draggable = (state.memoTag === '__all__' && !state.memoFavView && !state.memoSub && !expanded) ? 'true' : 'false';
+  /* 只要未展开即可拖拽（全部/标签/无标签/小标签/收藏视图均可；仅展开态不可拖以避免错位）。
+     拖拽重排由 persistMemoOrder 做「局部重排」：只调整当前筛选笔记之间的相对先后顺序，
+     不会把当前筛选的笔记抢到全局最前，也不会打乱其它笔记在「全部笔记」视图里的相对位置。 */
+  const draggable = expanded ? 'false' : 'true';
   const snippet = (stripHtml(n.body) || '').replace(/\s+/g, ' ').slice(0, 80) || '（空）';
   const chips = (n.cat ? '<span class="memo-chip">' + escHtml(n.cat) + '</span>' : '')
     + (n.sub ? '<span class="memo-chip sub">' + escHtml(n.sub) + '</span>' : '');
@@ -3994,9 +4036,18 @@ function persistMemoOrder(listEl) {
   const ids = Array.from(listEl.children).filter(c => c.dataset && c.dataset.id).map(c => c.dataset.id);
   if (!ids.length) return;
   const visibleSet = new Set(ids);
-  const hidden = state.memoNotes.filter(n => !visibleSet.has(n.id));
-  const ordered = ids.map(id => state.memoNotes.find(n => n.id === id)).filter(Boolean).concat(hidden);
-  ordered.forEach((n, i) => { n.ord = i; });
+  /* 局部重排：以「拖拽前全局顺序」为骨架，把当前可见笔记按拖拽后的新顺序回填到它们原有的槽位，
+     隐藏笔记（当前筛选未显示的）保持原槽位不动。这样在标签/收藏等筛选视图拖拽时，
+     只改变当前筛选笔记彼此之间的先后，不会把它们抢到全局最前、也不会打乱其它笔记在全部视图里的顺序。 */
+  const G = state.memoNotes.slice().sort((a, b) => ((a.ord || 0) - (b.ord || 0)));
+  const visMap = new Map(ids.map(id => [id, state.memoNotes.find(n => n.id === id)]));
+  let visIdx = 0;
+  const ordered = [];
+  for (const g of G) {
+    if (visibleSet.has(g.id)) ordered.push(visMap.get(ids[visIdx++]));
+    else ordered.push(g);
+  }
+  ordered.forEach((n, i) => { if (n) n.ord = i; });
   save();
 }
 function paintMemoNotes() {
@@ -4101,7 +4152,8 @@ function renderMemo() {
 function memoCurNote() { return state.memoEditId ? state.memoNotes.find(x => x.id === state.memoEditId) : null; }
 function memoSyncBody() {
   const n = memoCurNote();
-  if (n && memoQuill) { n.body = memoQuillToStorage(memoQuill.root.innerHTML); n.updatedAt = Date.now(); save(); }
+  /* 仅同步内容到内存（自动保存防丢失），不在此处刷新时间；时间只在「保存且真有改动」时由 memo-done 刷新 */
+  if (n && memoQuill) { n.body = memoQuillToStorage(memoQuill.root.innerHTML); save(); }
 }
 /* ---------- 待办清单：行首固定勾选框 / 空行新建同级 / 多行加框 ---------- */
 /* 自绘勾选框（不再用原生 <input>，避免嵌在可编辑区时手机打不了勾） */
@@ -4596,6 +4648,7 @@ async function memoQuillImageHandler() {
 
 function renderMemoEditor() {
   closeMemoColorPopover();
+  memoDirty = false;   // 进入编辑器清零：仅当用户真正改动并保存，才刷新时间
   /* 退出编辑器时立即清理动态吸顶 scroll 监听 */
   if (window._memoToolbarCleanup) { window._memoToolbarCleanup(); window._memoToolbarCleanup = null; }
   const n = memoCurNote();
@@ -4718,7 +4771,8 @@ function renderMemoEditor() {
   /* 自动保存：监听内容变化，存回旧结构（零迁移：卡片预览/旧笔记直接复用，不丢数据） */
   memoQuill.on('text-change', () => {
     n.body = memoQuillToStorage(memoQuill.root.innerHTML);
-    n.updatedAt = Date.now(); save();
+    save();
+    memoDirty = true;   // 标记为已编辑；时间由 memo-done 在保存时统一刷新（避免仅打开/查看就刷新时间）
   });
   /* 第3项：手机端编辑区左右滑动切换段落缩进（右滑+1级，左滑退1级） */
   const _ed = memoQuill.root;
@@ -4746,9 +4800,9 @@ function renderMemoEditor() {
     memoQuill.format('indent', next > 0 ? next : false);
   }, { passive: true });
   const titleEl = $('memoTitle'), catEl = $('memoCat'), subEl = $('memoSub');
-  titleEl.addEventListener('input', () => { n.title = titleEl.value; n.updatedAt = Date.now(); save(); });
-  catEl.addEventListener('input', () => { n.cat = catEl.value.trim(); n.updatedAt = Date.now(); save(); });
-  subEl.addEventListener('input', () => { n.sub = subEl.value.trim(); n.updatedAt = Date.now(); save(); });
+  titleEl.addEventListener('input', () => { n.title = titleEl.value; memoDirty = true; save(); });
+  catEl.addEventListener('input', () => { n.cat = catEl.value.trim(); memoDirty = true; save(); });
+  subEl.addEventListener('input', () => { n.sub = subEl.value.trim(); memoDirty = true; save(); });
 }
 
 /* 颜色 / 高亮选择：锚定在工具栏按钮下方的小浮层（非全屏弹窗） */
