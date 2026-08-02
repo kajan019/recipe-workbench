@@ -1353,6 +1353,16 @@ body {
 
 /* 速记（聊天式） */
 .memo-chat { display: flex; flex-direction: column; height: 100%; }
+/* 顶部搜索栏吸顶：不随消息列表/整页滚动而滚走（修 ivi.cx 整页滚动时搜索栏跟随滑动） */
+.memo-chat .memo-searchbar {
+  position: -webkit-sticky; position: sticky;
+  top: var(--memo-toolbar-top, 62px); z-index: 19;   /* 跟随顶栏实际高度，避免被压住 */
+  background: var(--bg);
+  margin-bottom: 0; padding-bottom: 10px;
+  box-shadow: 0 1px 0 var(--border);
+}
+/* 速记页：桌面端也让顶栏吸顶，搜索栏才能吸在正下方（仅作用于速记页，不波及其它桌面页） */
+body:has(.memo-chat) .topbar { position: sticky; top: 0; z-index: 20; }
 .memo-chat-list { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 10px; padding: 14px 4px; }
 .memo-bubble-row { display: flex; flex-direction: column; align-items: flex-end; max-width: 78%; margin-left: auto; cursor: pointer; position: relative; }
 .memo-bubble { background: #a78bfa; color: #fff; border-radius: 14px 14px 4px 14px; padding: 9px 13px; font-size: 15px; line-height: 1.55; word-break: break-word; max-width: 100%; }
@@ -1397,6 +1407,8 @@ body {
   .memo-card-title { min-width: 0; flex: 1 1 auto; }
   .memo-card-actions { flex: 0 0 auto; white-space: nowrap; }
 
+  /* 速记顶部搜索栏：手机端吸在顶栏正下方（顶栏 sticky top:0，搜索栏贴其下） */
+  .memo-chat .memo-searchbar { top: var(--memo-toolbar-top, 56px); z-index: 19; }
   /* 速记 · 发送栏固定页面底部，仅消息区上下滚动 */
   /* 需求5：合并栏与发送行整块吸底（替代原 .memo-chat-input 单独吸底，保证选中时两者一起固定） */
   .memo-chat-foot { position: -webkit-sticky; position: sticky; bottom: 0; z-index: 5; background: var(--panel); padding-bottom: env(safe-area-inset-bottom); }
@@ -1499,7 +1511,7 @@ body {
     height: var(--memo-toolbar-h, 52px);
     pointer-events: none;
   }
-  /* 吸顶状态：fixed 贴顶栏下方 */
+  /* 吸顶状态：fixed 贴顶栏下方（无论输入法是否弹出都一致吸顶） */
   .ql-toolbar.memo-qtoolbar.toolbar-sticky {
     position: -webkit-fixed;
     position: fixed;
@@ -1509,11 +1521,6 @@ body {
     z-index: 30;
     background: var(--bg);
     box-shadow: 0 1px 0 var(--border);
-  }
-  /* 方案A：输入法弹起时，吸顶工具条改贴键盘上沿，随时可点格式按钮 */
-  .ql-toolbar.memo-qtoolbar.toolbar-sticky.toolbar-over-keyboard {
-    top: auto;
-    bottom: var(--memo-kb-h, 0px);
   }
 }
 
