@@ -4836,9 +4836,11 @@ function renderMemoChat() {
   const _chatSave = _memoScrollBefore(() => $('memoChatList'));
   $('content').innerHTML =
     '<div class="memo-chat">'
+    + '<div class="memo-searchbar-wrap">'
     + '<div class="memo-searchbar mod-searchbar">'
     + '<input class="memo-search" data-action="memo-chat-search" placeholder="搜索速记" value="' + escAttr(state.memoChatSearch) + '">'
     + (state.memoChatSearch ? '<button class="memo-search-x" data-action="memo-chat-search-clear">×</button>' : '')
+    + '</div>'
     + '</div>'
     + '<div class="memo-chat-list" id="memoChatList">' + msgHTML + '</div>'
     + '<div class="memo-chat-foot">'
