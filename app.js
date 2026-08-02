@@ -2946,7 +2946,7 @@ async function handleClick(e) {
     }
     case 'sync-pull':
       closeModal();
-      githubPull().then(n => toast(n > 0 ? ('已合并云端：新增 ' + n + ' 条，两边数据均已保留') : '已合并云端（两边一致，无需新增）')).catch(e => toast('拉取失败：' + e.message));
+      githubPull().then(() => toast('已拉取云端（整份覆盖本地）')).catch(e => toast('拉取失败：' + e.message));
       break;
     case 'sync-save': {
       const cfg = {
