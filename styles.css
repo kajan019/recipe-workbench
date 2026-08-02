@@ -1199,9 +1199,19 @@ body {
 
 /* ==================== 备忘录模块 ==================== */
 .memo-wrap { display: flex; flex-direction: column; height: 100%; }
-.memo-searchbar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.memo-searchbar { position: relative; display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .memo-searchbar .memo-search { flex: 1; height: 38px; padding: 0 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); color: var(--text); font-size: 14px; }
 .memo-search-x { width: 34px; height: 34px; border: none; background: var(--panel-2); border-radius: 8px; color: var(--text-2); cursor: pointer; font-size: 18px; line-height: 1; }
+.memo-search-suggest { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 60; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-lg); padding: 4px; display: none; flex-direction: column; max-height: 280px; overflow-y: auto; }
+.memo-suggest-item { display: flex; align-items: center; gap: 6px; text-align: left; border: none; background: transparent; padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 14px; color: var(--text); width: 100%; }
+.memo-suggest-item:hover { background: var(--panel-2); }
+.memo-suggest-prefix { font-weight: 600; font-size: 12px; padding: 1px 6px; border-radius: 6px; white-space: nowrap; }
+.memo-suggest-prefix.big { color: #6d28d9; background: #ede9fe; }
+.memo-suggest-prefix.small { color: #0d9488; background: #ccfbf1; }
+.memo-subfilter { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-2); margin-bottom: 8px; }
+.memo-subfilter b { color: #0d9488; }
+.memo-subfilter button { border: none; background: var(--panel-2); border-radius: 6px; width: 22px; height: 22px; cursor: pointer; color: var(--text-2); font-size: 15px; line-height: 1; }
+.memo-tag-notag { border-style: dashed; }
 .memo-cols { display: flex; gap: 14px; flex: 1; min-height: 0; }
 .memo-tags { flex: 0 0 184px; width: 184px; overflow: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 4px; }
 .memo-tags-toggle { display: none; align-self: flex-start; border: 1px solid var(--border); background: var(--panel); color: var(--text-2); border-radius: 8px; padding: 4px 10px; font-size: 12px; cursor: pointer; margin-bottom: 4px; }
@@ -1328,10 +1338,18 @@ body {
 .memo-card-body.ql-editor li[data-list=unchecked],
 .memo-card-body.ql-editor li[data-list=checked] { cursor: pointer; -webkit-tap-highlight-color: transparent; }
 
-/* 颜色 / 高亮弹窗 */
+/* 颜色 / 高亮选择（锚定浮层，非全屏弹窗） */
 .memo-color-panel { max-width: 360px; }
-.memo-swatches { display: flex; flex-wrap: wrap; gap: 10px; }
+.memo-color-popover {
+  position: fixed; z-index: 200;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 12px; box-shadow: var(--shadow-lg);
+  padding: 12px; width: max-content; max-width: 92vw;
+}
+.memo-color-pop-head { font-size: 13px; font-weight: 600; color: var(--text-2); margin-bottom: 8px; }
+.memo-swatches { display: flex; flex-wrap: wrap; gap: 10px; max-width: 264px; }
 .memo-swatch { width: 36px; height: 36px; border-radius: 8px; border: 2px solid var(--border); cursor: pointer; }
+.memo-swatch:hover { transform: scale(1.08); }
 .memo-color-custom { margin-top: 14px; display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--text-2); }
 .memo-color-input { width: 44px; height: 32px; border: 1px solid var(--border); border-radius: 6px; background: none; cursor: pointer; }
 

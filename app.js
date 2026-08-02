@@ -270,6 +270,7 @@ let state = {
   memoExpandId: null,     // 列表中内联展开的笔记 id（null=未展开）
   memoTagCollapsed: false,// 「全部笔记」下方分类标签是否收起
   memoFavView: false,     // 是否处于「收藏」筛选视图
+  memoSub: '',            // 小标签筛选（''=不过滤；点击搜索建议里的小标签时设置）
 };
 let dragSrc = null;
 let nutAgg = null;       // 最近一次营养聚合结果（供点击宏量元素查看 Top3 来源）
@@ -445,7 +446,7 @@ function load() {
         if (Array.isArray(parsed.nutRecords)) state.nutRecords = parsed.nutRecords.map(migrateNutRecord);
         if (Array.isArray(parsed.memoNotes)) state.memoNotes = parsed.memoNotes.map(migrateMemoNote);
         if (Array.isArray(parsed.memoChat)) state.memoChat = parsed.memoChat.map(migrateMemoChat);
-        state.memoSel = []; state.memoTag = '__all__'; state.memoTagMobileHidden = false; state.memoSearch = ''; state.memoChatSearch = ''; state.memoEditId = null; state.memoExpandId = null; state.memoTagCollapsed = false; state.memoFavView = false;
+        state.memoSel = []; state.memoTag = '__all__'; state.memoTagMobileHidden = false; state.memoSearch = ''; state.memoChatSearch = ''; state.memoEditId = null; state.memoExpandId = null; state.memoTagCollapsed = false; state.memoFavView = false; state.memoSub = '';
       }
       mergeNutSeed();
       return;
@@ -886,6 +887,192 @@ function fallbackCopy(t) {
   try { document.execCommand('copy'); toast('已复制到剪贴板'); }
   catch (e) { toast('复制失败，请手动选择'); }
   document.body.removeChild(ta);
+}
+function copyMemoRich(html, plain) {
+  /* 复制“带格式”文本：粘贴到 Word/邮件/微信等外部，要和卡片预览长得一模一样。
+     做法：把卡片真实的 DOM 临时挂到文档并套 .ql-editor 类，让 Quill 原生 CSS 生效，
+     再读取每个列表项“真实画出来的符号(.ql-ui:before)”和“真实左缩进”，把它烤成
+     真实文字 + 内联样式。这样不被 Word 的列表语义再次归一化（旧版会把嵌套/项目符号
+     全变一级有序）。仅作用于复制用的临时节点，不碰卡片预览/编辑器。 */
+  const tmp = document.createElement('div');
+  tmp.className = 'ql-editor'; // 让 Quill 列表 CSS 生效，才能读到卡片真实符号/缩进
+  tmp.style.position = 'fixed'; tmp.style.left = '-9999px'; tmp.style.top = '0'; tmp.style.opacity = '0';
+  tmp.innerHTML = html;
+  document.body.appendChild(tmp); // 临时挂文档，getComputedStyle 才能反映 Quill 渲染
+  solidifyListsForCopy(tmp);
+  /* 需求1：普通文本（无列表标记）黏 Word 时，段前段后 2 磅、行距最小值 1.2 磅。
+     列表项转换的 div（dataset.copyListItem）保持 1.6，不在此处理。仅作用于复制临时节点 tmp。 */
+  tmp.querySelectorAll('p,div,h1,h2,h3,blockquote').forEach(el => {
+    if (el.dataset.copyListItem) return; // 列表项保持 1.6，跳过
+    if (!el.style.lineHeight) el.style.lineHeight = '1.2pt'; // 行距最小值 1.2 磅
+    el.style.msoLineHeightRule = 'at-least'; // Word 识别为"最小值"
+    el.style.marginTop = '2pt'; el.style.marginBottom = '2pt'; // 段前段后 2 磅
+    el.style.layoutGrid = 'none'; // 不勾选"如果定义了文档网格，则与网格对齐"
+  });
+  /* Quill 的“对齐/缩进”用 class 表示，外部应用不认；转成内联 style 以保留（列表项已在上面单独处理） */
+  tmp.querySelectorAll('[class*="ql-align-"]').forEach(el => {
+    const m = /ql-align-(\w+)/.exec(el.className); if (m) el.style.textAlign = m[1];
+  });
+  tmp.querySelectorAll('[class*="ql-indent-"]').forEach(el => {
+    const m = /ql-indent-(\d+)/.exec(el.className); if (m) el.style.paddingLeft = (parseInt(m[1], 10) * 1.5) + 'em';
+  });
+  const rich = tmp.innerHTML;
+  /* 需求3 + 微信换行：纯文本版（微信等对话框）待办框用 □/✓；并要求按块级正确换行（无视缩进）。
+     做法：clone tmp，把 Wingdings 字符 span 替换为 data-copy-plain 值；再把 marker span 移入
+     下一个块级兄弟的开头，避免 innerText 在 "1. " 与 "<p>文字</p>" 之间插换行；最后清零
+     块级元素的 margin/padding/line-height（纯文本不需要缩进和段间距，防止 innerText 多空行），
+     临时挂文档取 innerText，再温和清理。 */
+  const plainClone = tmp.cloneNode(true);
+  plainClone.querySelectorAll('span[data-copy-plain]').forEach(s => { s.textContent = s.getAttribute('data-copy-plain'); });
+  /* 把 marker span 和后面块级内容合并到同一行：例如 <span>1. </span><p>4865</p> → <p><span>1. </span>4865</p> */
+  plainClone.querySelectorAll('span[data-copy-marker]').forEach(ms => {
+    const next = ms.nextElementSibling;
+    if (next && /^P|DIV|H[1-6]|LI|BLOCKQUOTE$/i.test(next.tagName)) {
+      next.insertBefore(ms, next.firstChild);
+    }
+  });
+  /* 纯文本不需要缩进、段间距、特殊行距，清零可防止 innerText 因 margin 产生额外空行 */
+  plainClone.querySelectorAll('p,div,h1,h2,h3,blockquote,li').forEach(el => {
+    el.style.margin = '0'; el.style.padding = '0'; el.style.lineHeight = 'normal';
+  });
+  plainClone.style.position = 'fixed'; plainClone.style.left = '-9999px'; plainClone.style.top = '0'; plainClone.style.opacity = '0';
+  document.body.appendChild(plainClone);
+  const plainText = (plainClone.innerText || plainClone.textContent || plain || stripHtml(html) || '')
+    .replace(/\r/g, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/[ \t]*\n[ \t]*/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  document.body.removeChild(plainClone);
+  if (tmp.parentNode) tmp.parentNode.removeChild(tmp);
+  if (navigator.clipboard && window.isSecureContext && typeof ClipboardItem !== 'undefined') {
+    try {
+      const item = new ClipboardItem({
+        'text/html': new Blob([rich], { type: 'text/html' }),
+        'text/plain': new Blob([plainText], { type: 'text/plain' })
+      });
+      navigator.clipboard.write([item]).then(() => toast('已复制（含格式）')).catch(() => fallbackMemoCopy(rich, plainText));
+      return;
+    } catch (e) { /* 落到兜底 */ }
+  }
+  fallbackMemoCopy(rich, plainText);
+}
+/* 列表固化（WYSIWYG 复制）：不再重组为嵌套 <ol>/<ul>（Word 会把嵌套/项目符号再次归一化成一级有序）。
+   改为“照卡片真实渲染”把符号和缩进烤成真实文字 + 内联样式：
+   - 符号：读 Quill 真实画出来的 .ql-ui:before 内容（•/☐/☑…）；
+     但 ordered 编号是 CSS counter()，getComputedStyle 读出来的是 "counter(list-0)" 原始表达式，
+     所以 ordered 改由 JS 按 Quill 规则手动生成 1./a./i.；
+   - 缩进：读卡片 li.ql-indent-N 与列表容器的真实 padding-left，求和后转内联，和卡片逐字一致；
+   - 列表容器 ol/ul → 普通 div（去掉列表语义，避免 Word 再次归一化）。
+   仅作用于复制用的临时节点，不碰卡片预览/编辑器。 */
+function solidifyListsForCopy(root) {
+  /* 0) 预扫描：在替换 DOM 之前，先把所有 ordered 项的编号算好存进 Map。
+        原因：下面的替换循环会把前面的 li 换成 div，若到那时才调 computeOrderedMarker，
+        前面项已消失会被数漏，导致序号倒序（见 2026-08-02 日志“两个 bug 叠加”）。
+        预扫描基于原始 DOM，编号与卡片顺序一致；无序/待办不在此列，不受影响。 */
+  const orderedMarkers = new Map();
+  root.querySelectorAll('li[data-list="ordered"]').forEach(li => {
+    orderedMarkers.set(li, computeOrderedMarker(li));
+  });
+  /* 1) 每个列表项：读真实符号 + 真实缩进，转成 div（真实文字前缀 + 内联 padding） */
+  root.querySelectorAll('li[data-list]').forEach(li => {
+    const dl = li.getAttribute('data-list');
+    let marker = '';
+    if (dl === 'ordered') {
+      marker = orderedMarkers.get(li) || '1.';
+    } else {
+      const ui = li.querySelector('.ql-ui');
+      if (ui) {
+        try {
+          const c = getComputedStyle(ui, '::before').content;
+          if (c && c !== 'none' && c !== 'normal') marker = c.replace(/^["']|["']$/g, '');
+        } catch (e) { marker = ''; }
+      }
+      if (!marker && (dl === 'checked' || dl === 'unchecked')) marker = (dl === 'checked' ? '☑ ' : '☐ ');
+      if (ui) ui.remove();
+    }
+    let pad = '';
+    try { pad = getComputedStyle(li).paddingLeft; } catch (e) {}
+    const div = document.createElement('div');
+    if (pad) div.style.paddingLeft = pad;
+    div.style.lineHeight = '1.6';
+    div.dataset.copyListItem = '1'; // 标记：列表项转换块，需求1 的普通文本样式要跳过它
+    li.removeAttribute('data-action'); li.removeAttribute('data-id'); li.removeAttribute('data-list'); li.removeAttribute('class');
+    while (li.firstChild) div.appendChild(li.firstChild);
+    if (marker) {
+      const ms = document.createElement('span');
+      ms.textContent = marker.replace(/\s+$/, '') + ' ';
+      ms.setAttribute('data-copy-marker', '1'); // 纯文本生成时用来把 marker 和文字合并到同一行
+      if (dl === 'checked' || dl === 'unchecked') {
+        /* 需求2：待办框转 Wingdings 2 字体（仅框字符，div 内后续文字仍默认字体）。
+           Wingdings 2 码位：O(79)=空方框，R(82)=方框内勾（多来源交叉确认；沙箱无浏览器无法自测，
+           需真机验证；若显示不对，把 R 换成 P(80) 即“无框勾”，或 O 换成其它）。 */
+        ms.style.fontFamily = "'Wingdings 2', 'Wingdings', sans-serif";
+        ms.textContent = (dl === 'checked' ? 'R' : 'O') + ' ';
+        ms.setAttribute('data-copy-plain', dl === 'checked' ? '✓ ' : '□ ');
+      }
+      div.insertBefore(ms, div.firstChild);
+    }
+    li.parentNode.replaceChild(div, li);
+  });
+  /* 2) 列表容器 ol/ul → 普通 div，并带上容器自身的真实 padding-left（与上面 li 的 padding 求和 = 卡片总缩进） */
+  root.querySelectorAll('ol[data-list], ul[data-list]').forEach(list => {
+    const div = document.createElement('div');
+    try { const p = getComputedStyle(list).paddingLeft; if (p) div.style.paddingLeft = p; } catch (e) {}
+    while (list.firstChild) div.appendChild(list.firstChild);
+    list.parentNode.replaceChild(div, list);
+  });
+}
+/* 手动计算 Quill ordered 列表编号。Quill 用 CSS counters 画 1./a./i.，但 getComputedStyle(:before).content
+   读到的是 "counter(list-0) '.'" 表达式而非实际数字，所以用 JS 按同级同缩进分别计数。 */
+function computeOrderedMarker(li) {
+  const list = li.parentElement; if (!list) return '1.';
+  const indentMatch = /ql-indent-(\d+)/.exec(li.className || '');
+  const indent = indentMatch ? parseInt(indentMatch[1], 10) : 0;
+  const cycle = indent % 3;
+  let idx = 0;
+  const kids = Array.from(list.children);
+  for (let i = 0; i < kids.length; i++) {
+    const sibling = kids[i];
+    if (sibling.tagName !== 'LI' || sibling.getAttribute('data-list') !== 'ordered') continue;
+    const sm = /ql-indent-(\d+)/.exec(sibling.className || '');
+    const sIndent = sm ? parseInt(sm[1], 10) : 0;
+    if (sIndent !== indent) continue;
+    idx++;
+    if (sibling === li) break; // 数到当前项即停（必须用 for + break，forEach 的 return 无法提前退出）
+  }
+  const n = Math.max(1, idx);
+  if (cycle === 0) return n + '.';
+  if (cycle === 1) return numberToLowerAlpha(n) + '.';
+  return numberToLowerRoman(n) + '.';
+}
+function numberToLowerAlpha(n) {
+  let s = '';
+  while (n > 0) { n--; s = String.fromCharCode(97 + (n % 26)) + s; n = Math.floor(n / 26); }
+  return s || 'a';
+}
+function numberToLowerRoman(n) {
+  if (n <= 0) return 'i';
+  const vals = [1000,900,500,400,100,90,50,40,10,9,5,4,1];
+  const syms = ['m','cm','d','cd','c','xc','l','xl','x','ix','v','iv','i'];
+  let r = '';
+  for (let i = 0; i < vals.length; i++) { while (n >= vals[i]) { r += syms[i]; n -= vals[i]; } }
+  return r;
+}
+/* （已移除旧的 buildNativeList / getIndentLevel / nodeDepth：复制改为“照卡片真实渲染”，
+   不再重组嵌套列表，避免 Word 把嵌套/项目符号归一化为一级有序） */
+function fallbackMemoCopy(rich, plain) {
+  const d = document.createElement('div');
+  d.style.position = 'fixed'; d.style.left = '-9999px'; d.style.top = '0';
+  d.innerHTML = rich;
+  document.body.appendChild(d);
+  try {
+    const range = document.createRange(); range.selectNodeContents(d);
+    const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+    const ok = document.execCommand('copy'); sel.removeAllRanges();
+    toast(ok ? '已复制（含格式）' : '复制失败');
+  } catch (e) { toast('复制失败'); }
+  document.body.removeChild(d);
 }
 function downloadText(name, text) {
   const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
@@ -3071,7 +3258,7 @@ async function handleClick(e) {
     /* ===== 备忘录模块 ===== */
     case 'memo-new': {
       const minOrd = state.memoNotes.reduce((m, x) => Math.min(m, (typeof x.ord === 'number' ? x.ord : 0)), 0);
-      const n = { id: uid(), title: '', body: '', cat: (state.memoTag && state.memoTag !== '__all__') ? state.memoTag : '', sub: '', fav: false, ord: minOrd - 1, createdAt: Date.now(), updatedAt: Date.now() };
+      const n = { id: uid(), title: '', body: '', cat: (state.memoTag && state.memoTag !== '__all__' && state.memoTag !== '__notag__') ? state.memoTag : '', sub: '', fav: false, ord: minOrd - 1, createdAt: Date.now(), updatedAt: Date.now() };
       state.memoNotes.push(n); save();
       memoEditBackup = null; memoEditIsNew = true; state.memoEditId = n.id; renderMemo(); break;
     }
@@ -3102,14 +3289,31 @@ async function handleClick(e) {
       if (state.memoEditId === id) state.memoEditId = null;
       save(); closeModal(); renderMemoList(); break;
     }
-    case 'memo-tag': { state.memoTag = t.dataset.tag; state.memoFavView = false; renderMemoList(); break; }
-    case 'memo-tags-toggle': { state.memoTagMobileHidden = !state.memoTagMobileHidden; renderMemoList(); break; }
+    case 'memo-tag': { state.memoTag = t.dataset.tag; state.memoFavView = false; state.memoSub = ''; renderMemoList(); break; }
     case 'memo-search-clear': { state.memoSearch = ''; renderMemoList(); break; }
+    case 'memo-search-tag': {
+      const typ = t.dataset.tagtype, tag = t.dataset.tag;
+      state.memoSearch = ''; state.memoFavView = false;
+      if (typ === 'big') { state.memoTag = tag; state.memoSub = ''; }
+      else { state.memoTag = '__all__'; state.memoSub = tag; }
+      renderMemoList(); break;
+    }
+    case 'memo-subfilter-clear': { state.memoSub = ''; renderMemoList(); break; }
     case 'memo-pick-cat': { const tag = t.dataset.tag; const n = memoCurNote(); const c = $('memoCat'); if (n && c) { c.value = tag; n.cat = tag; n.updatedAt = Date.now(); save(); } break; }
     case 'memo-pick-sub': { const tag = t.dataset.tag; const n = memoCurNote(); const s = $('memoSub'); if (n && s) { s.value = tag; n.sub = tag; n.updatedAt = Date.now(); save(); } break; }
     case 'memo-fav-toggle-edit': { const n = memoCurNote(); if (n) { n.fav = !n.fav; n.updatedAt = Date.now(); save(); if (t) { t.classList.toggle('on', n.fav); t.textContent = n.fav ? '★ 已收藏' : '☆ 收藏'; } } break; }
     case 'memo-fav-toggle': { const id = t.dataset.id; const n = state.memoNotes.find(x => x.id === id); if (n) { n.fav = !n.fav; n.updatedAt = Date.now(); save(); if (t) { t.classList.toggle('on', n.fav); t.textContent = n.fav ? '★' : '☆'; } } break; }
-    case 'memo-copy': { const id = t.dataset.id; const n = state.memoNotes.find(x => x.id === id); if (n) { const txt = stripHtml(n.body); if (navigator.clipboard) navigator.clipboard.writeText(txt).then(() => toast('已复制文本')).catch(() => toast('复制失败')); else toast('当前环境不支持复制'); } break; }
+    case 'memo-copy': {
+      const id = t.dataset.id;
+      const n = state.memoNotes.find(x => x.id === id);
+      if (n) {
+        const card = t.closest('.memo-card');
+        const bodyEl = card ? card.querySelector('.memo-card-body') : null;
+        const srcHtml = bodyEl ? bodyEl.innerHTML : memoCardBodyHtml(n);
+        copyMemoRich(srcHtml, stripHtml(n.body));
+      }
+      break;
+    }
     case 'memo-card-toggle': { const id = t.dataset.id; state.memoExpandId = (state.memoExpandId === id) ? null : id; renderMemoList(); break; }
     case 'memo-card-cb': {
       const li = t;
@@ -3123,8 +3327,8 @@ async function handleClick(e) {
       }
       break;
     }
-    case 'memo-tag-all': { state.memoTag = '__all__'; state.memoFavView = false; state.memoTagCollapsed = !state.memoTagCollapsed; renderMemoList(); break; }
-    case 'memo-fav': { state.memoFavView = !state.memoFavView; state.memoTag = '__all__'; renderMemoList(); break; }
+    case 'memo-tag-all': { state.memoTag = '__all__'; state.memoFavView = false; state.memoSub = ''; state.memoTagCollapsed = !state.memoTagCollapsed; renderMemoList(); break; }
+    case 'memo-fav': { state.memoFavView = !state.memoFavView; state.memoTag = '__all__'; state.memoSub = ''; renderMemoList(); break; }
     case 'memo-fmt': { document.execCommand(t.dataset.cmd, false, null); memoSyncBody(); break; }
     case 'memo-block': { memoSetBlock(t.dataset.block); break; }
     case 'memo-list': { memoToggleList(t.dataset.list); break; }
@@ -3145,7 +3349,7 @@ async function handleClick(e) {
     case 'memo-swatch': {
       const kind = t.dataset.kind; const col = t.dataset.color;
       if (memoQuill) memoQuill.format(kind === 'fore' ? 'color' : 'background', col, Quill.sources.USER);
-      closeModal(); break;
+      closeMemoColorPopover(); break;
     }
     case 'memo-undo': { const b = $('memoBody'); if (b) { b.focus(); document.execCommand('undo'); memoSyncBody(); } break; }
     case 'memo-redo': { const b = $('memoBody'); if (b) { b.focus(); document.execCommand('redo'); memoSyncBody(); } break; }
@@ -3461,7 +3665,7 @@ function ensureUnitList() {
 /* 输入完用量后，自动聚焦单位框并弹出联想选择 */
 function handleChange(e) {
   const t = e.target;
-  if (t.dataset.action === 'memo-swatch-custom') { const kind = t.dataset.kind; if (memoQuill) memoQuill.format(kind === 'fore' ? 'color' : 'background', t.value, Quill.sources.USER); closeModal(); return; }
+  if (t.dataset.action === 'memo-swatch-custom') { const kind = t.dataset.kind; if (memoQuill) memoQuill.format(kind === 'fore' ? 'color' : 'background', t.value, Quill.sources.USER); closeMemoColorPopover(); return; }
   if (t.classList && t.classList.contains('ramount') && t.value !== '') {
     const unit = t.closest('.rline') && t.closest('.rline').querySelector('.runit');
     if (unit) unit.focus();
@@ -3588,7 +3792,11 @@ function memoVisibleNotes() {
   memoNormalizeOrd();
   let list = state.memoNotes.slice();
   if (state.memoFavView) list = list.filter(n => n.fav === true);
-  else if (state.memoTag && state.memoTag !== '__all__') list = list.filter(n => n.cat === state.memoTag);
+  else if (state.memoTag && state.memoTag !== '__all__') {
+    if (state.memoTag === '__notag__') list = list.filter(n => !n.cat);
+    else list = list.filter(n => n.cat === state.memoTag);
+  }
+  if (state.memoSub) list = list.filter(n => n.sub === state.memoSub);
   const q = (state.memoSearch || '').trim().toLowerCase();
   if (q) list = list.filter(n =>
     (n.title || '').toLowerCase().includes(q) ||
@@ -3623,7 +3831,7 @@ function memoCardBodyHtml(n) {
 }
 function noteItemHTML(n) {
   const expanded = state.memoExpandId === n.id;
-  const draggable = (state.memoTag === '__all__' && !state.memoFavView && !expanded) ? 'true' : 'false';
+  const draggable = (state.memoTag === '__all__' && !state.memoFavView && !state.memoSub && !expanded) ? 'true' : 'false';
   const snippet = (stripHtml(n.body) || '').replace(/\s+/g, ' ').slice(0, 80) || '（空）';
   const chips = (n.cat ? '<span class="memo-chip">' + escHtml(n.cat) + '</span>' : '')
     + (n.sub ? '<span class="memo-chip sub">' + escHtml(n.sub) + '</span>' : '');
@@ -3697,29 +3905,54 @@ function paintMemoNotes() {
   attachMemoSortable(list);
   const c = $('memoSearchClear'); if (c) c.style.display = state.memoSearch ? '' : 'none';
 }
-function memoSearchRefresh() { paintMemoNotes(); }
+function renderMemoSearchSuggest() {
+  const box = $('memoSearchSuggest'); if (!box) return;
+  const q = (state.memoSearch || '').trim().toLowerCase();
+  if (!q) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  const bigs = memoAllTags().filter(t => t.toLowerCase().includes(q));
+  const subs = memoAllSubs().filter(s => s.toLowerCase().includes(q));
+  if (!bigs.length && !subs.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  let html = '';
+  bigs.forEach(t => html += '<button class="memo-suggest-item" data-action="memo-search-tag" data-tagtype="big" data-tag="' + escAttr(t) + '"><span class="memo-suggest-prefix big">大标签/</span>' + escHtml(t) + '</button>');
+  subs.forEach(s => html += '<button class="memo-suggest-item" data-action="memo-search-tag" data-tagtype="small" data-tag="' + escAttr(s) + '"><span class="memo-suggest-prefix small">小标签/</span>' + escHtml(s) + '</button>');
+  box.innerHTML = html;
+  box.style.display = 'flex';
+}
+function memoSearchRefresh() { renderMemoSearchSuggest(); paintMemoNotes(); }
 function renderMemoList() {
   setChrome('我的备忘录', '<button class="btn primary" data-action="memo-new">＋ 新建笔记</button>');
   const tags = memoAllTags();
   const favCount = state.memoNotes.filter(n => n.fav).length;
+  const noTagCount = state.memoNotes.filter(n => !n.cat).length;
   const allBtn = '<button class="memo-tag ' + (state.memoTag === '__all__' && !state.memoFavView ? 'active' : '') + '" data-action="memo-tag-all">📒 全部笔记 <span class="memo-caret">' + (state.memoTagCollapsed ? '▸' : '▾') + '</span> <span class="memo-tag-count">' + state.memoNotes.length + '</span></button>';
   const favBtn = '<button class="memo-tag ' + (state.memoFavView ? 'active fav' : '') + '" data-action="memo-fav">⭐️ 收藏 <span class="memo-tag-count">' + favCount + '</span></button>';
-  const tagBtns = tags.map(t => '<button class="memo-tag ' + (state.memoTag === t ? 'active' : '') + '" data-action="memo-tag" data-tag="' + escAttr(t) + '">' + escHtml(t) + ' <span class="memo-tag-count">' + state.memoNotes.filter(n => n.cat === t).length + '</span></button>').join('');
+  const noTagBtn = '<button class="memo-tag memo-tag-notag ' + (state.memoTag === '__notag__' ? 'active' : '') + '" data-action="memo-tag" data-tag="__notag__">🏷️ 无标签 <span class="memo-tag-count">' + noTagCount + '</span></button>';
+  const tagBtns = noTagBtn + tags.map(t => '<button class="memo-tag ' + (state.memoTag === t ? 'active' : '') + '" data-action="memo-tag" data-tag="' + escAttr(t) + '">' + escHtml(t) + ' <span class="memo-tag-count">' + state.memoNotes.filter(n => n.cat === t).length + '</span></button>').join('');
+  const subFilter = state.memoSub ? '<div class="memo-subfilter">筛选小标签：<b>' + escHtml(state.memoSub) + '</b> <button data-action="memo-subfilter-clear" title="清除小标签筛选">×</button></div>' : '';
   $('content').innerHTML =
     '<div class="memo-wrap">'
     + '<div class="memo-searchbar mod-searchbar">'
-    + '<input class="memo-search" data-action="memo-search" placeholder="搜索笔记标题 / 内容 / 标签" value="' + escAttr(state.memoSearch) + '">'
+    + '<input class="memo-search" id="memoSearch" data-action="memo-search" placeholder="搜索笔记标题 / 内容 / 标签" value="' + escAttr(state.memoSearch) + '">'
     + (state.memoSearch ? '<button class="memo-search-x" id="memoSearchClear" data-action="memo-search-clear">×</button>' : '')
+    + '<div class="memo-search-suggest" id="memoSearchSuggest"></div>'
     + '</div>'
+    + subFilter
     + '<div class="memo-cols ' + (state.memoTagMobileHidden ? 'tags-hidden' : '') + '">'
     + '<div class="memo-tags">'
     + '<div class="memo-tags-head">' + favBtn + allBtn + '</div>'
-    + '<button class="memo-tags-toggle" data-action="memo-tags-toggle">' + (state.memoTagMobileHidden ? '显示分类 ▸' : '隐藏分类 ▾') + '</button>'
     + '<div class="memo-tag-list' + (state.memoTagCollapsed ? ' collapsed' : '') + '">' + (tagBtns || '<div class="memo-tag-empty">还没有分类标签</div>') + '</div>'
     + '</div>'
     + '<div class="memo-notes" id="memoNotesList"></div>'
     + '</div></div>';
   paintMemoNotes();
+  renderMemoSearchSuggest();
+  const searchEl = $('memoSearch');
+  if (searchEl) {
+    searchEl.addEventListener('blur', () => setTimeout(() => { const b = $('memoSearchSuggest'); if (b) b.style.display = 'none'; }, 150));
+    /* 中文输入法候选上屏时，input 在部分浏览器仍带 isComposing，导致筛选不触发（要退格一次才出结果）。
+       监听 compositionend：候选提交即更新 state 并刷新，解决“输完要退格才筛选”。 */
+    searchEl.addEventListener('compositionend', () => { state.memoSearch = searchEl.value; memoSearchRefresh(); });
+  }
 }
 function renderMemo() {
   if (state.memoEditId) { renderMemoEditor(); return; }
@@ -4224,6 +4457,7 @@ async function memoQuillImageHandler() {
 }
 
 function renderMemoEditor() {
+  closeMemoColorPopover();
   const n = memoCurNote();
   if (!n) { state.memoEditId = null; renderMemoList(); return; }
   setChrome('编辑笔记', '<button class="btn ghost" data-action="memo-cancel">取消</button><button class="btn" data-action="memo-done">完成</button>');
@@ -4314,17 +4548,47 @@ function renderMemoEditor() {
   subEl.addEventListener('input', () => { n.sub = subEl.value.trim(); n.updatedAt = Date.now(); save(); });
 }
 
-/* 颜色 / 高亮选择弹窗 */
+/* 颜色 / 高亮选择：锚定在工具栏按钮下方的小浮层（非全屏弹窗） */
+let memoColorPopover = null;
 function openMemoColorModal(kind) {
+  closeMemoColorPopover();
   const foreColors = ['#000000', '#888888', '#a56738', '#ed7c68', '#fea6bd', '#ffc7d5', '#ffc53c', '#ffd988', '#5fb2eb', '#aab4e7', '#ace087', '#dbde91'];
   const backColors = ['#f8efd3', '#f4cfae', '#f0a9a9', '#f9dee2', '#b6dee5'];
   const colors = kind === 'fore' ? foreColors : backColors;
   const sw = colors.map(c => '<button class="memo-swatch" data-action="memo-swatch" data-kind="' + kind + '" data-color="' + c + '" style="background:' + c + '"></button>').join('');
-  openModal('<div class="modal-mask" data-action="modal-close"><div class="modal-panel memo-color-panel">'
-    + '<div class="modal-head">' + (kind === 'fore' ? '文字颜色' : '高亮颜色') + '<span class="modal-close" data-action="modal-close">×</span></div>'
-    + '<div class="modal-body"><div class="memo-swatches">' + sw + '</div>'
-    + '<div class="memo-color-custom">自定义颜色：<input type="color" class="memo-color-input" data-action="memo-swatch-custom" data-kind="' + kind + '" value="' + colors[0] + '"></div></div>'
-    + '</div></div>');
+  const box = document.createElement('div');
+  box.className = 'memo-color-popover';
+  box.innerHTML = '<div class="memo-color-pop-head">' + (kind === 'fore' ? '文字颜色' : '高亮颜色') + '</div>'
+    + '<div class="memo-swatches">' + sw + '</div>'
+    + '<div class="memo-color-custom">自定义颜色：<input type="color" class="memo-color-input" data-kind="' + kind + '" value="' + colors[0] + '"></div>';
+  document.body.appendChild(box);
+  /* 自定义取色器：拖动用 input 实时套用，选完(change)关闭浮层 */
+  const customInput = box.querySelector('.memo-color-input');
+  const applyCustom = () => { if (memoQuill) memoQuill.format(kind === 'fore' ? 'color' : 'background', customInput.value, Quill.sources.USER); };
+  customInput.addEventListener('input', applyCustom);
+  customInput.addEventListener('change', () => { applyCustom(); closeMemoColorPopover(); });
+  /* 定位到触发按钮正下方（fixed 视口坐标，不被编辑器容器 overflow 裁切） */
+  const btn = document.querySelector(kind === 'fore' ? '.ql-color' : '.ql-background');
+  const r = btn ? btn.getBoundingClientRect() : { left: 16, bottom: 80, top: 80 };
+  const bw = box.offsetWidth, bh = box.offsetHeight;
+  let left = r.left;
+  let top = r.bottom + 6;
+  if (left + bw > window.innerWidth - 8) left = window.innerWidth - bw - 8;
+  if (top + bh > window.innerHeight - 8) top = (r.top || 80) - bh - 6;
+  box.style.left = Math.max(8, left) + 'px';
+  box.style.top = Math.max(8, top) + 'px';
+  memoColorPopover = box;
+  setTimeout(() => document.addEventListener('mousedown', memoColorOutside, true), 0);
+}
+function memoColorOutside(e) {
+  if (!memoColorPopover) return;
+  if (memoColorPopover.contains(e.target)) return;
+  if (e.target.closest && e.target.closest('.ql-color, .ql-background')) return;
+  closeMemoColorPopover();
+}
+function closeMemoColorPopover() {
+  if (memoColorPopover) { memoColorPopover.remove(); memoColorPopover = null; }
+  document.removeEventListener('mousedown', memoColorOutside, true);
 }
 
 /* 选图 → 压缩 → 裁切确认 → 回调 */
@@ -4380,6 +4644,8 @@ function renderMemoChat() {
   const list = $('memoChatList'); if (list) list.scrollTop = list.scrollHeight;
   const ti = $('memoChatText');
   if (ti) ti.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); memoChatSend(); } });
+  const ci = document.querySelector('input[data-action="memo-chat-search"]');
+  if (ci) ci.addEventListener('compositionend', () => { state.memoChatSearch = ci.value; memoChatRefresh(); });
 }
 function memoChatSend() {
   const ti = $('memoChatText'); if (!ti) return;
