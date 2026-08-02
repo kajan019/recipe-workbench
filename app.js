@@ -273,6 +273,7 @@ let state = {
   memoSub: '',            // 小标签筛选（''=不过滤；点击搜索建议里的小标签时设置）
   memoScheduleDate: fmtDate(Date.now()), // 今日日程当前选中的日期（YYYY-MM-DD，默认今天）
   memoScheduleTasks: [],   // 今日日程任务清单：{ id, date, text, done, createdAt }
+  deletedIds: [],          // 软删除墓碑：已删除记录的 id 集合（跨设备同步删除用，避免拉取时被复活）
 };
 let dragSrc = null;
 let nutAgg = null;       // 最近一次营养聚合结果（供点击宏量元素查看 Top3 来源）
@@ -451,6 +452,7 @@ function load() {
         state.memoSel = []; state.memoTag = '__all__'; state.memoTagMobileHidden = false; state.memoSearch = ''; state.memoChatSearch = ''; state.memoEditId = null; state.memoExpandId = null; state.memoTagCollapsed = false; state.memoFavView = false; state.memoSub = '';
         state.memoScheduleDate = (parsed.memoScheduleDate && /^\d{4}-\d{2}-\d{2}$/.test(parsed.memoScheduleDate)) ? parsed.memoScheduleDate : fmtDate(Date.now());
         if (Array.isArray(parsed.memoScheduleTasks)) state.memoScheduleTasks = parsed.memoScheduleTasks;
+        if (Array.isArray(parsed.deletedIds)) state.deletedIds = parsed.deletedIds;
       }
       mergeNutSeed();
       return;
@@ -529,6 +531,7 @@ function save() {
   catch (e) { toast('保存失败：本地存储空间可能已满（图片过多）'); }
   scheduleSync();
 }
+function markDeleted(id) { if (id && !state.deletedIds.includes(id)) state.deletedIds.push(id); }   // 软删除：登记墓碑，删除会随同步在所有设备生效
 
 /* ---------------- GitHub 同步（私有库当数据库，实现跨设备 + 永久保存） ----------------
  * 本地 localStorage 仍是工作副本（秒开）；GitHub 私有库的 data.json 是云端镜像。
@@ -555,7 +558,7 @@ async function githubApi(path, opts) {
 async function githubPush() {
   if (!syncEnabled()) return false;
   const cfg = getSyncCfg();
-  const payload = JSON.stringify({ recipes: state.recipes, collections: state.collections, nutfoods: state.nutfoods, nutRecords: state.nutRecords, memoNotes: state.memoNotes, memoChat: state.memoChat, memoScheduleDate: state.memoScheduleDate, memoScheduleTasks: state.memoScheduleTasks });
+  const payload = JSON.stringify({ recipes: state.recipes, collections: state.collections, nutfoods: state.nutfoods, nutRecords: state.nutRecords, memoNotes: state.memoNotes, memoChat: state.memoChat, memoScheduleDate: state.memoScheduleDate, memoScheduleTasks: state.memoScheduleTasks, deletedIds: state.deletedIds });
   const apiPath = '/contents/' + syncPath(cfg) + '?ref=' + syncBranch(cfg);
   let sha = null;
   try { const r = await githubApi(apiPath); const j = await r.json(); if (j && j.sha) sha = j.sha; } catch (_) { /* 文件不存在则新建 */ }
@@ -598,14 +601,17 @@ async function githubPull() {
   } else {
     throw new Error('云端文件为空（或路径/分支不正确：' + syncPath(cfg) + '@' + syncBranch(cfg) + '）');
   }
-  const data = JSON.parse(txt);
-  let added = 0;
-  const _merge = (key, migrate) => {
-    if (!Array.isArray(data[key])) return;
-    const before = (state[key] || []).length;
-    state[key] = mergeById(state[key], data[key].map(migrate));
-    added += Math.max(0, state[key].length - before);
-  };
+    const data = JSON.parse(txt);
+    /* 合并软删除墓碑（已删除 id 集合取并集），让删除在所有设备真正消失 */
+    state.deletedIds = Array.from(new Set([...(state.deletedIds || []), ...(Array.isArray(data.deletedIds) ? data.deletedIds : [])]));
+    const delSet = new Set(state.deletedIds);
+    let added = 0;
+    const _merge = (key, migrate) => {
+      if (!Array.isArray(data[key])) return;
+      const before = (state[key] || []).length;
+      state[key] = mergeById(state[key], data[key].map(migrate)).filter(x => !(x && x.id && delSet.has(x.id)));
+      added += Math.max(0, state[key].length - before);
+    };
   _merge('recipes', migrateRecipe);
   _merge('collections', migrateCollection);
   _merge('nutfoods', migrateNutFood);
@@ -2944,14 +2950,14 @@ async function handleClick(e) {
       if (kind === 'recipe') {
         const r = getRecipe(id);
         if (r) {
-          state.recipes = state.recipes.filter(x => x.id !== id);
+          state.recipes = state.recipes.filter(x => x.id !== id); markDeleted(id);
           save(); closeModal(); renderLibrary();
           toast('已删除菜谱「' + (r.name || '未命名') + '」');
         }
       } else if (kind === 'fav') {
         const c = state.collections.find(x => x.id === id);
         if (c) {
-          state.collections = state.collections.filter(x => x.id !== id);
+          state.collections = state.collections.filter(x => x.id !== id); markDeleted(id);
           save(); closeModal(); renderFavorites();
           toast('已删除收藏「' + (c.title || '未命名') + '」');
         }
@@ -3268,7 +3274,7 @@ async function handleClick(e) {
     case 'nut-viz-reset': state.nutRecView = null; state.nutCalDayFocus = false; rerenderNut(); break;
     case 'nut-rec-close': state.nutRecView = null; rerenderNut(); break;
     case 'nut-rec-del':
-      state.nutRecords = state.nutRecords.filter(x => x.id !== t.dataset.id);
+      state.nutRecords = state.nutRecords.filter(x => x.id !== t.dataset.id); markDeleted(t.dataset.id);
       if (state.nutRecView === t.dataset.id) state.nutRecView = null;
       save(); rerenderNut(); break;
     case 'nut-rec-apply': {
@@ -3314,7 +3320,7 @@ async function handleClick(e) {
     }
     case 'nut-del-food': {
       const id = t.dataset.id;
-      state.nutfoods = state.nutfoods.filter(x => x.id !== id);
+      state.nutfoods = state.nutfoods.filter(x => x.id !== id); markDeleted(id);
       save();
       closeModal();
       renderNutrition();
@@ -3370,7 +3376,7 @@ async function handleClick(e) {
     }
     case 'memo-del-confirm': {
       const id = t.dataset.id;
-      state.memoNotes = state.memoNotes.filter(n => n.id !== id);
+      state.memoNotes = state.memoNotes.filter(n => n.id !== id); markDeleted(id);
       if (state.memoEditId === id) state.memoEditId = null;
       save(); closeModal(); renderMemoList(); break;
     }
@@ -3462,7 +3468,7 @@ async function handleClick(e) {
     }
     case 'memo-schedule-del': {
       const id = t.dataset.id;
-      state.memoScheduleTasks = state.memoScheduleTasks.filter(x => x.id !== id);
+      state.memoScheduleTasks = state.memoScheduleTasks.filter(x => x.id !== id); markDeleted(id);
       save(); renderMemoSchedule(); break;
     }
     /* 速记（聊天式） */
@@ -3480,7 +3486,7 @@ async function handleClick(e) {
     }
     case 'memo-chat-del-confirm': {
       const id = t.dataset.id;
-      state.memoChat = state.memoChat.filter(m => m.id !== id);
+      state.memoChat = state.memoChat.filter(m => m.id !== id); markDeleted(id);
       state.memoSel = state.memoSel.filter(s => s !== id);
       save(); closeModal(); renderMemoChat(); break;
     }
