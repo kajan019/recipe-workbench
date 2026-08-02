@@ -273,7 +273,6 @@ let state = {
   memoSub: '',            // 小标签筛选（''=不过滤；点击搜索建议里的小标签时设置）
   memoScheduleDate: fmtDate(Date.now()), // 今日日程当前选中的日期（YYYY-MM-DD，默认今天）
   memoScheduleTasks: [],   // 今日日程任务清单：{ id, date, text, done, createdAt }
-  deletedIds: [],          // 软删除墓碑：已删除记录的 id 集合（跨设备同步删除用，避免拉取时被复活）
 };
 let dragSrc = null;
 let nutAgg = null;       // 最近一次营养聚合结果（供点击宏量元素查看 Top3 来源）
@@ -452,7 +451,6 @@ function load() {
         state.memoSel = []; state.memoTag = '__all__'; state.memoTagMobileHidden = false; state.memoSearch = ''; state.memoChatSearch = ''; state.memoEditId = null; state.memoExpandId = null; state.memoTagCollapsed = false; state.memoFavView = false; state.memoSub = '';
         state.memoScheduleDate = (parsed.memoScheduleDate && /^\d{4}-\d{2}-\d{2}$/.test(parsed.memoScheduleDate)) ? parsed.memoScheduleDate : fmtDate(Date.now());
         if (Array.isArray(parsed.memoScheduleTasks)) state.memoScheduleTasks = parsed.memoScheduleTasks;
-        if (Array.isArray(parsed.deletedIds)) state.deletedIds = parsed.deletedIds;
       }
       mergeNutSeed();
       return;
@@ -531,7 +529,6 @@ function save() {
   catch (e) { toast('保存失败：本地存储空间可能已满（图片过多）'); }
   scheduleSync();
 }
-function markDeleted(id) { if (id && !state.deletedIds.includes(id)) state.deletedIds.push(id); }   // 软删除：登记墓碑，删除会随同步在所有设备生效
 
 /* ---------------- GitHub 同步（私有库当数据库，实现跨设备 + 永久保存） ----------------
  * 本地 localStorage 仍是工作副本（秒开）；GitHub 私有库的 data.json 是云端镜像。
@@ -558,7 +555,7 @@ async function githubApi(path, opts) {
 async function githubPush() {
   if (!syncEnabled()) return false;
   const cfg = getSyncCfg();
-  const payload = JSON.stringify({ recipes: state.recipes, collections: state.collections, nutfoods: state.nutfoods, nutRecords: state.nutRecords, memoNotes: state.memoNotes, memoChat: state.memoChat, memoScheduleDate: state.memoScheduleDate, memoScheduleTasks: state.memoScheduleTasks, deletedIds: state.deletedIds });
+  const payload = JSON.stringify({ recipes: state.recipes, collections: state.collections, nutfoods: state.nutfoods, nutRecords: state.nutRecords, memoNotes: state.memoNotes, memoChat: state.memoChat, memoScheduleDate: state.memoScheduleDate, memoScheduleTasks: state.memoScheduleTasks });
   const apiPath = '/contents/' + syncPath(cfg) + '?ref=' + syncBranch(cfg);
   let sha = null;
   try { const r = await githubApi(apiPath); const j = await r.json(); if (j && j.sha) sha = j.sha; } catch (_) { /* 文件不存在则新建 */ }
@@ -583,7 +580,7 @@ async function githubPush() {
   }
 }
 
-/* 从 data.json 拉取并与本地「按 id 合并」（取代旧版的整份覆盖，解决离线编辑冲突） */
+/* 从 data.json 拉取，整份覆盖本地（点击拉取即拉取，不做合并） */
 async function githubPull() {
   if (!syncEnabled()) return 0;
   const cfg = getSyncCfg();
@@ -601,30 +598,20 @@ async function githubPull() {
   } else {
     throw new Error('云端文件为空（或路径/分支不正确：' + syncPath(cfg) + '@' + syncBranch(cfg) + '）');
   }
-    const data = JSON.parse(txt);
-    /* 合并软删除墓碑（已删除 id 集合取并集），让删除在所有设备真正消失 */
-    state.deletedIds = Array.from(new Set([...(state.deletedIds || []), ...(Array.isArray(data.deletedIds) ? data.deletedIds : [])]));
-    const delSet = new Set(state.deletedIds);
-    let added = 0;
-    const _merge = (key, migrate) => {
-      if (!Array.isArray(data[key])) return;
-      const before = (state[key] || []).length;
-      state[key] = mergeById(state[key], data[key].map(migrate)).filter(x => !(x && x.id && delSet.has(x.id)));
-      added += Math.max(0, state[key].length - before);
-    };
-  _merge('recipes', migrateRecipe);
-  _merge('collections', migrateCollection);
-  _merge('nutfoods', migrateNutFood);
-  _merge('nutRecords', migrateNutRecord);
-  _merge('memoNotes', migrateMemoNote);
-  _merge('memoChat', migrateMemoChat);
-  _merge('memoScheduleTasks', migrateMemoScheduleTask);
+  const data = JSON.parse(txt);
+  // 直接整份覆盖本地（拉取即拉取，不合并）；每条数据仍走 migrate 保证字段兼容
+  state.recipes = Array.isArray(data.recipes) ? data.recipes.map(migrateRecipe) : [];
+  state.collections = Array.isArray(data.collections) ? data.collections.map(migrateCollection) : [];
+  state.nutfoods = Array.isArray(data.nutfoods) ? data.nutfoods.map(migrateNutFood) : [];
+  state.nutRecords = Array.isArray(data.nutRecords) ? data.nutRecords.map(migrateNutRecord) : [];
+  state.memoNotes = Array.isArray(data.memoNotes) ? data.memoNotes.map(migrateMemoNote) : [];
+  state.memoChat = Array.isArray(data.memoChat) ? data.memoChat.map(migrateMemoChat) : [];
+  state.memoScheduleDate = (data.memoScheduleDate && /^\d{4}-\d{2}-\d{2}$/.test(data.memoScheduleDate)) ? data.memoScheduleDate : fmtDate(Date.now());
+  state.memoScheduleTasks = Array.isArray(data.memoScheduleTasks) ? data.memoScheduleTasks : [];
   _suppressSync = true; save(); _suppressSync = false;   // 拉取期间抑制自动上传，避免回写
   render();
   updateSyncDot('ok');
-  /* 合并后把「并集」回传云端，保证其他设备也能拉到完整数据 */
-  try { await githubPush(); } catch (e) { console.warn('合并回传云端失败（本地已保留并集）', e); }
-  return added;
+  return 0;
 }
 
 /* 防抖自动上传（在 save() 末尾调用） */
@@ -634,30 +621,6 @@ function scheduleSync() {
   if (!cfg || !cfg.auto || !cfg.token || !cfg.repo) return;
   clearTimeout(_syncTimer);
   _syncTimer = setTimeout(() => { githubPush().catch(e => console.warn('自动同步失败', e)); }, 1200);
-}
-
-/* 按 id 合并两端数据：保留各自新增、互不覆盖；同 id 两边都改则按 updatedAt（缺则 createdAt）留较新 */
-function mergeById(localArr, cloudArr) {
-  const lMap = new Map(), cMap = new Map();
-  (localArr || []).forEach(x => { if (x && x.id) lMap.set(x.id, x); });
-  (cloudArr || []).forEach(x => { if (x && x.id) cMap.set(x.id, x); });
-  const out = [], seen = new Set();
-  /* 1) 以本地顺序为主，用户原本看到的顺序不变 */
-  (localArr || []).forEach(l => {
-    if (!l || !l.id) { out.push(l); return; }   // 无 id 原样保留，不丢数据
-    seen.add(l.id);
-    const c = cMap.get(l.id);
-    if (c) {
-      const lt = l.updatedAt || l.createdAt || 0;
-      const ct = c.updatedAt || c.createdAt || 0;
-      out.push(ct >= lt ? c : l);                // 冲突：留较新的一版
-    } else out.push(l);                          // 仅本地有
-  });
-  /* 2) 仅云端有（本地没有）的 → 追加 */
-  (cloudArr || []).forEach(c => { if (c && c.id && !seen.has(c.id)) out.push(c); });
-  /* 3) 兜底：无 id 的云端项也追加，避免极旧数据丢失 */
-  (cloudArr || []).forEach(c => { if (c && !c.id) out.push(c); });
-  return out;
 }
 
 /* 同步设置弹窗 */
@@ -2950,14 +2913,14 @@ async function handleClick(e) {
       if (kind === 'recipe') {
         const r = getRecipe(id);
         if (r) {
-          state.recipes = state.recipes.filter(x => x.id !== id); markDeleted(id);
+          state.recipes = state.recipes.filter(x => x.id !== id);
           save(); closeModal(); renderLibrary();
           toast('已删除菜谱「' + (r.name || '未命名') + '」');
         }
       } else if (kind === 'fav') {
         const c = state.collections.find(x => x.id === id);
         if (c) {
-          state.collections = state.collections.filter(x => x.id !== id); markDeleted(id);
+          state.collections = state.collections.filter(x => x.id !== id);
           save(); closeModal(); renderFavorites();
           toast('已删除收藏「' + (c.title || '未命名') + '」');
         }
@@ -3274,7 +3237,7 @@ async function handleClick(e) {
     case 'nut-viz-reset': state.nutRecView = null; state.nutCalDayFocus = false; rerenderNut(); break;
     case 'nut-rec-close': state.nutRecView = null; rerenderNut(); break;
     case 'nut-rec-del':
-      state.nutRecords = state.nutRecords.filter(x => x.id !== t.dataset.id); markDeleted(t.dataset.id);
+      state.nutRecords = state.nutRecords.filter(x => x.id !== t.dataset.id);
       if (state.nutRecView === t.dataset.id) state.nutRecView = null;
       save(); rerenderNut(); break;
     case 'nut-rec-apply': {
@@ -3320,7 +3283,7 @@ async function handleClick(e) {
     }
     case 'nut-del-food': {
       const id = t.dataset.id;
-      state.nutfoods = state.nutfoods.filter(x => x.id !== id); markDeleted(id);
+      state.nutfoods = state.nutfoods.filter(x => x.id !== id);
       save();
       closeModal();
       renderNutrition();
@@ -3376,7 +3339,7 @@ async function handleClick(e) {
     }
     case 'memo-del-confirm': {
       const id = t.dataset.id;
-      state.memoNotes = state.memoNotes.filter(n => n.id !== id); markDeleted(id);
+      state.memoNotes = state.memoNotes.filter(n => n.id !== id);
       if (state.memoEditId === id) state.memoEditId = null;
       save(); closeModal(); renderMemoList(); break;
     }
@@ -3468,7 +3431,7 @@ async function handleClick(e) {
     }
     case 'memo-schedule-del': {
       const id = t.dataset.id;
-      state.memoScheduleTasks = state.memoScheduleTasks.filter(x => x.id !== id); markDeleted(id);
+      state.memoScheduleTasks = state.memoScheduleTasks.filter(x => x.id !== id);
       save(); renderMemoSchedule(); break;
     }
     /* 速记（聊天式） */
@@ -3486,7 +3449,7 @@ async function handleClick(e) {
     }
     case 'memo-chat-del-confirm': {
       const id = t.dataset.id;
-      state.memoChat = state.memoChat.filter(m => m.id !== id); markDeleted(id);
+      state.memoChat = state.memoChat.filter(m => m.id !== id);
       state.memoSel = state.memoSel.filter(s => s !== id);
       save(); closeModal(); renderMemoChat(); break;
     }
