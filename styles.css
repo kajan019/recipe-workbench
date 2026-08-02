@@ -801,7 +801,7 @@ body {
   .drawer {
     display: flex; flex-direction: column;
     position: fixed; top: 0; left: 0; bottom: 0; z-index: 70;
-    width: 84%; max-width: 320px;
+    width: 56%; max-width: 213px;   /* 整体：展开时宽度改为原来的 2/3（84%→56%，320px→213px） */
     background: linear-gradient(180deg, #ffffff 0%, #fff7fb 100%);
     box-shadow: 4px 0 28px rgba(120, 90, 180, .28);
     transform: translateX(-100%);
@@ -810,9 +810,9 @@ body {
     overflow-y: auto;
   }
   .drawer.open { transform: translateX(0); }
-  .drawer-head { display: flex; align-items: center; gap: 10px; padding: 6px 4px 14px; }
-  .drawer-head .brand-avatar { width: 40px; height: 40px; font-size: 22px; border-radius: 12px; }
-  .drawer-title { flex: 1 1 auto; min-width: 0; }
+  .drawer-head { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 18px 4px 14px; position: relative; }
+  .drawer-head .brand-avatar { width: 48px; height: 48px; font-size: 26px; border-radius: 14px; }
+  .drawer-head .drawer-close { position: absolute; top: 8px; right: 8px; }
   .drawer-close {
     flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%;
     border: none; background: rgba(244, 220, 232, .5); color: var(--text-2);
@@ -828,16 +828,10 @@ body {
     font-size: 11px; color: var(--text-3); line-height: 1.6;
   }
 
-  /* 右下角悬浮新增按钮 */
+  /* 右下角悬浮新增按钮（手机端隐藏，避免遮挡编辑器/速记输入栏） */
   .fab-add {
-    display: flex; align-items: center; justify-content: center;
-    position: fixed; right: 18px; bottom: calc(20px + env(safe-area-inset-bottom)); z-index: 50;
-    width: 56px; height: 56px; border-radius: 50%; border: 3px solid #fff;
-    background: linear-gradient(135deg, #ff6fa5 0%, #ff8db8 100%); color: #fff;
-    font-size: 30px; font-weight: 300; cursor: pointer;
-    box-shadow: 0 8px 22px rgba(255, 111, 165, .5);
+    display: none !important;
   }
-  .fab-add:active { transform: scale(.92); }
 
   /* 弹窗不要超出屏幕 */
   .modal-panel { max-width: 94vw; border-radius: 18px; }
@@ -1352,25 +1346,34 @@ body {
 .memo-swatch:hover { transform: scale(1.08); }
 .memo-color-custom { margin-top: 14px; display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--text-2); }
 .memo-color-input { width: 44px; height: 32px; border: 1px solid var(--border); border-radius: 6px; background: none; cursor: pointer; }
+/* 需求1：色卡高亮当前选中项；"无高亮"按钮（仅高亮场景） */
+.memo-swatch.active { outline: 3px solid #7c3aed; outline-offset: 1px; }
+.memo-swatch-none { height: 36px; padding: 0 12px; border: 2px solid var(--border); background: var(--panel); color: var(--text-2); font-size: 13px; border-radius: 8px; cursor: pointer; }
+.memo-swatch-none.active { border-color: #7c3aed; color: #7c3aed; background: #ede9fe; }
 
 /* 速记（聊天式） */
 .memo-chat { display: flex; flex-direction: column; height: 100%; }
 .memo-chat-list { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 10px; padding: 14px 4px; }
 .memo-bubble-row { display: flex; flex-direction: column; align-items: flex-end; max-width: 78%; margin-left: auto; cursor: pointer; position: relative; }
 .memo-bubble { background: #a78bfa; color: #fff; border-radius: 14px 14px 4px 14px; padding: 9px 13px; font-size: 15px; line-height: 1.55; word-break: break-word; max-width: 100%; }
-.memo-bubble-text-in { white-space: pre-wrap; }
+.memo-bubble-text-in, .memo-chat-text-in { white-space: pre-wrap; word-break: break-word; }
 .memo-chat-img-in { max-width: 200px; max-height: 240px; border-radius: 10px; display: block; }
 .memo-bubble-time { font-size: 11px; color: var(--text-3); margin-top: 3px; padding-right: 4px; }
 .memo-bubble-row.sel .memo-bubble { outline: 3px solid #f59e0b; }
 .memo-bubble-row.sel { position: relative; }
 .memo-chat-del { position: absolute; top: -10px; right: -10px; width: 22px; height: 22px; border-radius: 50%; border: none; background: #fee2e2; color: #e11d48; cursor: pointer; font-size: 11px; line-height: 1; display: none; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(0,0,0,.2); z-index: 3; }
-.memo-bubble-row:hover .memo-chat-del, .memo-bubble-row.sel .memo-chat-del { display: flex; }
+.memo-bubble-row.sel .memo-chat-del { display: flex; }
+/* 桌面：悬停即显示删除键；触屏设备(无真实悬停)不挂 hover，避免"第一下点出删除键、第二下才选中" */
+@media (hover: hover) and (pointer: fine) {
+  .memo-bubble-row:hover .memo-chat-del { display: flex; }
+}
 .memo-chat-del:hover { background: #fecaca; }
 .memo-bubble-row.sel::after { content: "✓"; position: absolute; top: -6px; left: -6px; width: 20px; height: 20px; border-radius: 50%; background: #f59e0b; color: #fff; font-size: 12px; display: flex; align-items: center; justify-content: center; }
+.memo-chat-foot { background: var(--panel); } /* 需求5：合并栏+发送行整块底色，避免长列表滚动时文字透出 */
 .memo-merge-bar { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #fff7ed; border: 1px solid #fdba74; border-radius: 10px; font-size: 14px; color: #9a3412; }
-.memo-chat-input { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--border); background: var(--panel); }
+.memo-chat-input { display: flex; gap: 8px; align-items: flex-end; padding: 10px; border-top: 1px solid var(--border); background: var(--panel); }
 .memo-chat-img { width: 42px; height: 42px; border: 1px solid var(--border); background: var(--panel-2); border-radius: 10px; font-size: 20px; cursor: pointer; }
-.memo-chat-text { flex: 1; height: 42px; padding: 0 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); color: var(--text); font-size: 15px; }
+.memo-chat-text { flex: 1; min-height: 42px; height: auto; max-height: 140px; resize: none; overflow-y: auto; line-height: 1.4; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); color: var(--text); font-size: 15px; font-family: inherit; }
 .memo-chat-send { padding: 0 18px; height: 42px; border: none; border-radius: 10px; background: #a78bfa; color: #fff; font-size: 15px; cursor: pointer; }
 .memo-chat-send:hover { background: #8b5cf6; }
 
@@ -1379,12 +1382,32 @@ body {
 .memo-danger:hover { background: #fee2e2 !important; }
 
 @media (max-width: 720px) {
+  /* 我的备忘录 · 大标签横向流式排列：全部笔记下方，从左到右，空间不足自动换行 */
   .memo-cols { flex-direction: column; }
-  .memo-tags { flex: none; width: 100%; flex-direction: row; flex-wrap: wrap; overflow: visible; }
+  .memo-tags { flex: none; width: 100%; flex-direction: column; flex-wrap: nowrap; overflow: visible; gap: 8px; }
+  .memo-tags-head { flex-direction: row; flex-wrap: wrap; }
+  .memo-tag-list { flex-direction: row; flex-wrap: wrap; margin-top: 0; }
+  .memo-tag-list .memo-tag { width: auto; flex: 0 0 auto; }
   .memo-tags-toggle { display: inline-block; }
   .memo-cols.tags-hidden .memo-tags { display: none; }
   .memo-notes { max-height: none; }
   .memo-tags-row { flex-direction: column; }
+
+  /* 我的备忘录 · 卡片模板化对齐：标题截断、操作按钮固定右侧不被挤压，跨卡片对齐 */
+  .memo-card-title { min-width: 0; flex: 1 1 auto; }
+  .memo-card-actions { flex: 0 0 auto; white-space: nowrap; }
+
+  /* 速记 · 发送栏固定页面底部，仅消息区上下滚动 */
+  /* 需求5：合并栏与发送行整块吸底（替代原 .memo-chat-input 单独吸底，保证选中时两者一起固定） */
+  .memo-chat-foot { position: -webkit-sticky; position: sticky; bottom: 0; z-index: 5; background: var(--panel); padding-bottom: env(safe-area-inset-bottom); }
+  .memo-chat-input { padding-bottom: 0; }
+  .memo-chat-send { white-space: nowrap; }
+  body:has(.memo-chat) .fab-add { display: none; }
+  body:has(.memo-chat) .main { padding-bottom: 0; }
+
+  /* 编辑笔记 · 取消/完成靠右 */
+  .topbar-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+
   .memo-bubble-row { max-width: 88%; }
 }
 
@@ -1450,8 +1473,47 @@ body {
 .ql-editor li.ql-indent-7:not(.ql-direction-rtl){padding-left:11.25em}
 .ql-editor li.ql-indent-8:not(.ql-direction-rtl){padding-left:12.75em}
 
+/* 待办勾选图标：强制文本呈现（☑ / ☐，非彩色 emoji ☑️），让编辑器与卡片预览完全一致 */
+.ql-editor li[data-list="checked"] > .ql-ui:before { content: '\2611\FE0E'; }
+.ql-editor li[data-list="unchecked"] > .ql-ui:before { content: '\2610\FE0E'; }
+
+/* 列表标记自定义（用户指定 · 覆盖 Quill 原生，编辑器与卡片共用同一套 .ql-editor 渲染） */
+/* 无序列表：一级 ■ 二级 ○ 三级 ♦ 四级 ♢ */
+.ql-editor li[data-list=bullet] > .ql-ui:before { content: '\25A0'; }
+.ql-editor li[data-list=bullet].ql-indent-1 > .ql-ui:before { content: '\25CB'; }
+.ql-editor li[data-list=bullet].ql-indent-2 > .ql-ui:before { content: '\2666'; }
+.ql-editor li[data-list=bullet].ql-indent-3 > .ql-ui:before { content: '\2662'; }
+/* 有序列表：二级 (1). (2). 三级 ① ② ③ 四级 a. b. c. （一级保持 1. 2. 3. 原生；带圈数字 ① 用文件顶部已定义的 @counter-style circled） */
+.ql-editor li[data-list=ordered].ql-indent-1 > .ql-ui:before { content: '(' counter(list-1, decimal) '). '; }
+.ql-editor li[data-list=ordered].ql-indent-2 > .ql-ui:before { content: counter(list-2, circled); }
+.ql-editor li[data-list=ordered].ql-indent-3 > .ql-ui:before { content: counter(list-3, lower-alpha) '. '; }
+
 @media (max-width: 720px) {
-  .ql-toolbar.memo-qtoolbar { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
+  .ql-toolbar.memo-qtoolbar { flex-wrap: wrap; overflow: visible; }
   .ql-toolbar.memo-qtoolbar button { flex: 0 0 auto; }
+  /* 窄屏工具条动态吸顶：默认正常文档流，滚过原位后加 .toolbar-sticky 变 fixed */
+  .memo-edit { height: auto; display: block; }
+  .memo-body { overflow: visible; }
+  /* 占位元素：工具条 fixed 脱离文档流时撑住高度，防止内容跳动 */
+  .memo-toolbar-placeholder {
+    height: var(--memo-toolbar-h, 52px);
+    pointer-events: none;
+  }
+  /* 吸顶状态：fixed 贴顶栏下方 */
+  .ql-toolbar.memo-qtoolbar.toolbar-sticky {
+    position: -webkit-fixed;
+    position: fixed;
+    top: var(--memo-toolbar-top, 56px);
+    left: 0;
+    right: 0;
+    z-index: 30;
+    background: var(--bg);
+    box-shadow: 0 1px 0 var(--border);
+  }
+  /* 方案A：输入法弹起时，吸顶工具条改贴键盘上沿，随时可点格式按钮 */
+  .ql-toolbar.memo-qtoolbar.toolbar-sticky.toolbar-over-keyboard {
+    top: auto;
+    bottom: var(--memo-kb-h, 0px);
+  }
 }
 

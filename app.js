@@ -576,9 +576,9 @@ async function githubPush() {
   }
 }
 
-/* 从 data.json 拉取并覆盖本地（拉取期间抑制自动上传，避免回写） */
+/* 从 data.json 拉取并与本地「按 id 合并」（取代旧版的整份覆盖，解决离线编辑冲突） */
 async function githubPull() {
-  if (!syncEnabled()) return;
+  if (!syncEnabled()) return 0;
   const cfg = getSyncCfg();
   const apiPath = '/contents/' + syncPath(cfg) + '?ref=' + syncBranch(cfg);
   const res = await githubApi(apiPath);
@@ -595,15 +595,25 @@ async function githubPull() {
     throw new Error('云端文件为空（或路径/分支不正确：' + syncPath(cfg) + '@' + syncBranch(cfg) + '）');
   }
   const data = JSON.parse(txt);
-  if (Array.isArray(data.recipes)) state.recipes = data.recipes.map(migrateRecipe);
-  if (Array.isArray(data.collections)) state.collections = data.collections.map(migrateCollection);
-  if (Array.isArray(data.nutfoods)) state.nutfoods = data.nutfoods.map(migrateNutFood);
-  if (Array.isArray(data.nutRecords)) state.nutRecords = data.nutRecords.map(migrateNutRecord);
-  if (Array.isArray(data.memoNotes)) state.memoNotes = data.memoNotes.map(migrateMemoNote);
-  if (Array.isArray(data.memoChat)) state.memoChat = data.memoChat.map(migrateMemoChat);
-  _suppressSync = true; save(); _suppressSync = false;
+  let added = 0;
+  const _merge = (key, migrate) => {
+    if (!Array.isArray(data[key])) return;
+    const before = (state[key] || []).length;
+    state[key] = mergeById(state[key], data[key].map(migrate));
+    added += Math.max(0, state[key].length - before);
+  };
+  _merge('recipes', migrateRecipe);
+  _merge('collections', migrateCollection);
+  _merge('nutfoods', migrateNutFood);
+  _merge('nutRecords', migrateNutRecord);
+  _merge('memoNotes', migrateMemoNote);
+  _merge('memoChat', migrateMemoChat);
+  _suppressSync = true; save(); _suppressSync = false;   // 拉取期间抑制自动上传，避免回写
   render();
   updateSyncDot('ok');
+  /* 合并后把「并集」回传云端，保证其他设备也能拉到完整数据 */
+  try { await githubPush(); } catch (e) { console.warn('合并回传云端失败（本地已保留并集）', e); }
+  return added;
 }
 
 /* 防抖自动上传（在 save() 末尾调用） */
@@ -613,6 +623,30 @@ function scheduleSync() {
   if (!cfg || !cfg.auto || !cfg.token || !cfg.repo) return;
   clearTimeout(_syncTimer);
   _syncTimer = setTimeout(() => { githubPush().catch(e => console.warn('自动同步失败', e)); }, 1200);
+}
+
+/* 按 id 合并两端数据：保留各自新增、互不覆盖；同 id 两边都改则按 updatedAt（缺则 createdAt）留较新 */
+function mergeById(localArr, cloudArr) {
+  const lMap = new Map(), cMap = new Map();
+  (localArr || []).forEach(x => { if (x && x.id) lMap.set(x.id, x); });
+  (cloudArr || []).forEach(x => { if (x && x.id) cMap.set(x.id, x); });
+  const out = [], seen = new Set();
+  /* 1) 以本地顺序为主，用户原本看到的顺序不变 */
+  (localArr || []).forEach(l => {
+    if (!l || !l.id) { out.push(l); return; }   // 无 id 原样保留，不丢数据
+    seen.add(l.id);
+    const c = cMap.get(l.id);
+    if (c) {
+      const lt = l.updatedAt || l.createdAt || 0;
+      const ct = c.updatedAt || c.createdAt || 0;
+      out.push(ct >= lt ? c : l);                // 冲突：留较新的一版
+    } else out.push(l);                          // 仅本地有
+  });
+  /* 2) 仅云端有（本地没有）的 → 追加 */
+  (cloudArr || []).forEach(c => { if (c && c.id && !seen.has(c.id)) out.push(c); });
+  /* 3) 兜底：无 id 的云端项也追加，避免极旧数据丢失 */
+  (cloudArr || []).forEach(c => { if (c && !c.id) out.push(c); });
+  return out;
 }
 
 /* 同步设置弹窗 */
@@ -762,7 +796,7 @@ function openCrop(sec, bid, src, onDone, onSkip) {
       sw = img.clientWidth || img.naturalWidth || stage.clientWidth || 400;
       sh = img.clientHeight || img.naturalHeight || 300;
     }
-    left = sw * 0.15; top = sh * 0.15; w = sw * 0.7; h = sh * 0.7;
+    left = 0; top = 0; w = sw; h = sh; /* 需求2：裁剪框默认框选全图 */
     clamp(); setBox();
   };
   const onDown = (e, type) => {
@@ -918,32 +952,19 @@ function copyMemoRich(html, plain) {
   });
   const rich = tmp.innerHTML;
   /* 需求3 + 微信换行：纯文本版（微信等对话框）待办框用 □/✓；并要求按块级正确换行（无视缩进）。
-     做法：clone tmp，把 Wingdings 字符 span 替换为 data-copy-plain 值；再把 marker span 移入
-     下一个块级兄弟的开头，避免 innerText 在 "1. " 与 "<p>文字</p>" 之间插换行；最后清零
-     块级元素的 margin/padding/line-height（纯文本不需要缩进和段间距，防止 innerText 多空行），
-     临时挂文档取 innerText，再温和清理。 */
+     关键修复：不再用 innerText —— 它会在“嵌套块边界”每个都插一个换行，列表被 solidify 转成的
+     双层包裹(was-ol div ⊃ copyListItem div)会无中生有出空行，且有序编号后文字被拆成两行。
+     改为 buildPlainText：clone tmp → 把 Wingdings 字符 span 替换为 data-copy-plain 值(□/✓) →
+     按“顶层逻辑块”遍历，每块输出一行；列表容器逐条成行，编号/符号与文字用 textContent 自然拼成
+     同一行（textContent 不插入换行）；trim 后为空的不输出（自动跳过隐藏空段落）。
+     仅作用于纯文本 clone，不动 Word 的 rich（rich 已在上方 const rich = tmp.innerHTML 定稿）。 */
   const plainClone = tmp.cloneNode(true);
   plainClone.querySelectorAll('span[data-copy-plain]').forEach(s => { s.textContent = s.getAttribute('data-copy-plain'); });
-  /* 把 marker span 和后面块级内容合并到同一行：例如 <span>1. </span><p>4865</p> → <p><span>1. </span>4865</p> */
-  plainClone.querySelectorAll('span[data-copy-marker]').forEach(ms => {
-    const next = ms.nextElementSibling;
-    if (next && /^P|DIV|H[1-6]|LI|BLOCKQUOTE$/i.test(next.tagName)) {
-      next.insertBefore(ms, next.firstChild);
-    }
-  });
-  /* 纯文本不需要缩进、段间距、特殊行距，清零可防止 innerText 因 margin 产生额外空行 */
-  plainClone.querySelectorAll('p,div,h1,h2,h3,blockquote,li').forEach(el => {
-    el.style.margin = '0'; el.style.padding = '0'; el.style.lineHeight = 'normal';
-  });
-  plainClone.style.position = 'fixed'; plainClone.style.left = '-9999px'; plainClone.style.top = '0'; plainClone.style.opacity = '0';
-  document.body.appendChild(plainClone);
-  const plainText = (plainClone.innerText || plainClone.textContent || plain || stripHtml(html) || '')
+  const plainText = buildPlainText(plainClone)
     .replace(/\r/g, '')
     .replace(/[ \t]{2,}/g, ' ')
-    .replace(/[ \t]*\n[ \t]*/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
-  document.body.removeChild(plainClone);
   if (tmp.parentNode) tmp.parentNode.removeChild(tmp);
   if (navigator.clipboard && window.isSecureContext && typeof ClipboardItem !== 'undefined') {
     try {
@@ -956,6 +977,50 @@ function copyMemoRich(html, plain) {
     } catch (e) { /* 落到兜底 */ }
   }
   fallbackMemoCopy(rich, plainText);
+}
+/* 生成微信等纯文本：按“逻辑块”逐块一行，杜绝 innerText 在嵌套块边界多插空行。
+   递归扫描（v92）：早期版本只在 ql-editor 直接子节点找列表容器，若列表被外层 div/blockquote
+   包住就会整坨被压成一行。现改为递归：
+   - 列表容器(was-ol div)：直接子块含 .copyListItem → 逐条成行（编号/符号与文字同处一行）；
+   - 其它块：若内部还有块级子元素则递归遍历，否则作为叶块用 textContent 取一行；
+   - textContent 不插入换行 → 无空行、无多行；trim 为空的不输出（自动跳过隐藏空段落）。
+   前置：data-copy-plain 替换(□/✓)须在此之前完成；本函数不读布局，无需挂文档。
+   本函数只生成纯文本 plaintext，与 Word 的 rich(已在 copyMemoRich 内 const rich 冻结) 完全无关。 */
+function buildPlainText(root) {
+  const lines = [];
+  const oneLine = el => el.textContent.replace(/\s+/g, ' ').trim();
+  function walk(parent) {
+    Array.from(parent.childNodes).forEach(node => {
+      if (node.nodeType === 3) { // 文本节点
+        const t = node.textContent.replace(/\s+/g, ' ').trim();
+        if (t) lines.push(t);
+        return;
+      }
+      if (node.nodeType !== 1) return; // 跳过注释等
+      const el = node;
+      /* 列表容器：直接子块含 .copyListItem → 逐条成行（每个列表项占一行） */
+      if (el.tagName === 'DIV' && Array.from(el.children).some(c => c.nodeType === 1 && c.dataset && c.dataset.copyListItem)) {
+        Array.from(el.children).forEach(c => {
+          if (c.nodeType === 1 && c.dataset && c.dataset.copyListItem) {
+            const line = oneLine(c);
+            if (line) lines.push(line);
+          }
+        });
+        return;
+      }
+      /* 普通块：若内部还有块级子元素则递归（避免把嵌套列表/段落压成一行）；
+         否则作为叶块输出一行（textContent 不插入换行，故无空行、无多行） */
+      const hasBlockChild = Array.from(el.childNodes).some(n => n.nodeType === 1 && /^(P|DIV|H[1-6]|BLOCKQUOTE|LI|UL|OL)$/i.test(n.tagName));
+      if (hasBlockChild) {
+        walk(el);
+      } else {
+        const line = oneLine(el);
+        if (line) lines.push(line);
+      }
+    });
+  }
+  walk(root);
+  return lines.join('\n');
 }
 /* 列表固化（WYSIWYG 复制）：不再重组为嵌套 <ol>/<ul>（Word 会把嵌套/项目符号再次归一化成一级有序）。
    改为“照卡片真实渲染”把符号和缩进烤成真实文字 + 内联样式：
@@ -980,6 +1045,10 @@ function solidifyListsForCopy(root) {
     let marker = '';
     if (dl === 'ordered') {
       marker = orderedMarkers.get(li) || '1.';
+      /* 与无序/待办一致：删掉空的 .ql-ui 占位。否则纯文本合并逻辑会把编号与文字隔断，
+         微信里 "1. " 与后面文字被 innerText 拆成两行。Word 的 rich 版本就靠 marker span 提供 "1. "，删它无影响。 */
+      const ui = li.querySelector('.ql-ui');
+      if (ui) ui.remove();
     } else {
       const ui = li.querySelector('.ql-ui');
       if (ui) {
@@ -1151,11 +1220,15 @@ function navigate(view) {
   state.view = view;
   render();
 }
+let _memoChatActive = false;
 function render() {
   document.querySelectorAll('.nav-item').forEach(n => {
     const v = n.dataset.view;
     n.classList.toggle('active', !!v && v !== '__sync__' && v === state.view);
   });
+  const wasInChat = _memoChatActive;
+  _memoChatActive = state.view === 'memo-chat';
+  const enteringChat = state.view === 'memo-chat' && !wasInChat;
   if (state.view === 'library' && state.editing) { renderEditor(); return; }
   if (state.view === 'library' && state.viewId) { renderRecipeView(state.viewId); return; }
   if (state.view === 'library') { renderLibrary(); return; }
@@ -1163,7 +1236,12 @@ function render() {
   if (state.view === 'filter') { renderFilter(); return; }
   if (state.view === 'nutrition') { rerenderNut(); return; }
   if (state.view === 'favorites') { renderFavorites(); return; }
-  if (state.view === 'memo-chat') { renderMemoChat(); return; }
+  if (state.view === 'memo-chat') {
+    renderMemoChat();
+    /* 仅“进入/切回速记”时自动滚到最新消息；页内重渲染（选中/搜索/删图）不滚动，保持用户当前滑块位置 */
+    if (enteringChat) memoChatScrollToEnd();
+    return;
+  }
   if (state.view === 'memo') { renderMemo(); return; }
 }
 function setChrome(crumb, actionsHTML) {
@@ -2892,7 +2970,7 @@ async function handleClick(e) {
     }
     case 'sync-pull':
       closeModal();
-      githubPull().then(() => toast('已从云端拉取')).catch(e => toast('拉取失败：' + e.message));
+      githubPull().then(n => toast(n > 0 ? ('已合并云端：新增 ' + n + ' 条，两边数据均已保留') : '已合并云端（两边一致，无需新增）')).catch(e => toast('拉取失败：' + e.message));
       break;
     case 'sync-save': {
       const cfg = {
@@ -3260,11 +3338,11 @@ async function handleClick(e) {
       const minOrd = state.memoNotes.reduce((m, x) => Math.min(m, (typeof x.ord === 'number' ? x.ord : 0)), 0);
       const n = { id: uid(), title: '', body: '', cat: (state.memoTag && state.memoTag !== '__all__' && state.memoTag !== '__notag__') ? state.memoTag : '', sub: '', fav: false, ord: minOrd - 1, createdAt: Date.now(), updatedAt: Date.now() };
       state.memoNotes.push(n); save();
-      memoEditBackup = null; memoEditIsNew = true; state.memoEditId = n.id; renderMemo(); break;
+      memoEditBackup = null; memoEditIsNew = true; state.memoEditId = n.id; memoListScroll = captureMemoScroll(); renderMemo(); break;
     }
     case 'memo-open': {
       const n = state.memoNotes.find(x => x.id === t.dataset.id);
-      if (n) { memoEditBackup = JSON.parse(JSON.stringify(n)); memoEditIsNew = false; state.memoEditId = n.id; renderMemo(); }
+      if (n) { memoEditBackup = JSON.parse(JSON.stringify(n)); memoEditIsNew = false; state.memoEditId = n.id; memoListScroll = captureMemoScroll(); renderMemo(); }
       break;
     }
     case 'memo-done': { memoSyncBody(); state.memoEditId = null; state.memoExpandId = null; memoEditBackup = null; memoEditIsNew = false; renderMemo(); break; }
@@ -3314,7 +3392,7 @@ async function handleClick(e) {
       }
       break;
     }
-    case 'memo-card-toggle': { const id = t.dataset.id; state.memoExpandId = (state.memoExpandId === id) ? null : id; renderMemoList(); break; }
+    case 'memo-card-toggle': { const id = t.dataset.id; state.memoExpandId = (state.memoExpandId === id) ? null : id; renderMemoList(true); break; }
     case 'memo-card-cb': {
       const li = t;
       const id = li.dataset.id;
@@ -3349,6 +3427,11 @@ async function handleClick(e) {
     case 'memo-swatch': {
       const kind = t.dataset.kind; const col = t.dataset.color;
       if (memoQuill) memoQuill.format(kind === 'fore' ? 'color' : 'background', col, Quill.sources.USER);
+      closeMemoColorPopover(); break;
+    }
+    case 'memo-swatch-none': {
+      const kind = t.dataset.kind;
+      if (memoQuill) memoQuill.format(kind === 'fore' ? 'color' : 'background', false, Quill.sources.USER);
       closeMemoColorPopover(); break;
     }
     case 'memo-undo': { const b = $('memoBody'); if (b) { b.focus(); document.execCommand('undo'); memoSyncBody(); } break; }
@@ -3919,7 +4002,36 @@ function renderMemoSearchSuggest() {
   box.style.display = 'flex';
 }
 function memoSearchRefresh() { renderMemoSearchSuggest(); paintMemoNotes(); }
-function renderMemoList() {
+let memoListScroll = null; /* 需求6：进入编辑器前记录列表滚动位置，返回时恢复 */
+/* 同时记录 window（手机端整页滚动）与 #memoNotesList / #content（桌面端）三处滚动位置，返回时一并恢复 */
+function captureMemoScroll() {
+  return {
+    win: window.scrollY || document.documentElement.scrollTop || 0,
+    list: $('memoNotesList') ? $('memoNotesList').scrollTop : 0,
+    content: $('content') ? $('content').scrollTop : 0
+  };
+}
+/* 重渲染前/后保持滑块位置：桌面端滚动容器是内部 overflow 元素(#memoNotesList / #memoChatList)，
+   innerHTML 替换会把它重置到顶部；手机端整页由 window 滚动，替换子节点不会重置 window，故手机段天然无事。
+   这里两类都记录并还原，跨端统一。 */
+function _memoScrollBefore(getEl) {
+  const el = getEl();
+  return { top: el ? el.scrollTop : 0, win: window.scrollY || document.documentElement.scrollTop || 0, has: !!el };
+}
+function _memoScrollAfter(getEl, s) {
+  if (!s) return;
+  const el = getEl();
+  if (el) el.scrollTop = s.top;
+  window.scrollTo(0, s.win || 0);
+  requestAnimationFrame(() => {
+    const e = getEl();
+    if (e) e.scrollTop = s.top;
+    window.scrollTo(0, s.win || 0);
+  });
+}
+function renderMemoList(preserve) {
+  /* 退出编辑器 → 清理动态吸顶监听 */
+  if (window._memoToolbarCleanup) { window._memoToolbarCleanup(); window._memoToolbarCleanup = null; }
   setChrome('我的备忘录', '<button class="btn primary" data-action="memo-new">＋ 新建笔记</button>');
   const tags = memoAllTags();
   const favCount = state.memoNotes.filter(n => n.fav).length;
@@ -3929,6 +4041,11 @@ function renderMemoList() {
   const noTagBtn = '<button class="memo-tag memo-tag-notag ' + (state.memoTag === '__notag__' ? 'active' : '') + '" data-action="memo-tag" data-tag="__notag__">🏷️ 无标签 <span class="memo-tag-count">' + noTagCount + '</span></button>';
   const tagBtns = noTagBtn + tags.map(t => '<button class="memo-tag ' + (state.memoTag === t ? 'active' : '') + '" data-action="memo-tag" data-tag="' + escAttr(t) + '">' + escHtml(t) + ' <span class="memo-tag-count">' + state.memoNotes.filter(n => n.cat === t).length + '</span></button>').join('');
   const subFilter = state.memoSub ? '<div class="memo-subfilter">筛选小标签：<b>' + escHtml(state.memoSub) + '</b> <button data-action="memo-subfilter-clear" title="清除小标签筛选">×</button></div>' : '';
+  /* 重渲染前记录当前滚动位置：桌面滚动容器=#memoNotesList(内部 overflow)，手机=window；
+     若列表当前不存在(从编辑器返回)，则沿用 memo-open/new 时记录的 memoListScroll */
+  const _prevNotes = $('memoNotesList');
+  const _scrollSave = (preserve && _prevNotes) ? _memoScrollBefore(() => $('memoNotesList'))
+    : (memoListScroll ? { top: memoListScroll.list, win: memoListScroll.win, has: true } : null);
   $('content').innerHTML =
     '<div class="memo-wrap">'
     + '<div class="memo-searchbar mod-searchbar">'
@@ -3946,6 +4063,10 @@ function renderMemoList() {
     + '</div></div>';
   paintMemoNotes();
   renderMemoSearchSuggest();
+  /* 重渲染后还原滚动位置：桌面还原 #memoNotesList，手机还原 window；
+     卡片行内展开(preserve)与从编辑器返回(memoListScroll)保持原滑块；切标签/搜索则回到顶部 */
+  _memoScrollAfter(() => $('memoNotesList'), _scrollSave);
+  memoListScroll = null;
   const searchEl = $('memoSearch');
   if (searchEl) {
     searchEl.addEventListener('blur', () => setTimeout(() => { const b = $('memoSearchSuggest'); if (b) b.style.display = 'none'; }, 150));
@@ -4458,9 +4579,14 @@ async function memoQuillImageHandler() {
 
 function renderMemoEditor() {
   closeMemoColorPopover();
+  /* 退出编辑器时立即清理动态吸顶 scroll 监听 */
+  if (window._memoToolbarCleanup) { window._memoToolbarCleanup(); window._memoToolbarCleanup = null; }
   const n = memoCurNote();
   if (!n) { state.memoEditId = null; renderMemoList(); return; }
-  setChrome('编辑笔记', '<button class="btn ghost" data-action="memo-cancel">取消</button><button class="btn" data-action="memo-done">完成</button>');
+  setChrome('编辑笔记', '<button class="btn ghost" data-action="memo-cancel">取消</button><button class="btn primary" data-action="memo-done">完成</button>');
+  /* 第5项：窄屏工具条吸顶——测出顶栏实际高度，使格式工具条吸顶时正好贴在顶栏正下方 */
+  const _tb = document.querySelector('.topbar');
+  if (_tb) document.documentElement.style.setProperty('--memo-toolbar-top', _tb.offsetHeight + 'px');
   const allTags = memoAllTags();
   const allSubs = memoAllSubs();
   const bigChips = allTags.map(t => '<button class="memo-tagchip" data-action="memo-pick-cat" data-tag="' + escAttr(t) + '">#' + escHtml(t) + '</button>').join('');
@@ -4485,7 +4611,6 @@ function renderMemoEditor() {
     + '<span class="ql-sep"></span>'
     + '<button class="ql-header" value="1" title="大标题">H1</button>'
     + '<button class="ql-header" value="2" title="小标题">H2</button>'
-    + '<button class="ql-header" value="false" title="正文">正文</button>'
     + '<span class="ql-sep"></span>'
     + '<button class="ql-list" value="bullet" title="无序清单">• 列表</button>'
     + '<button class="ql-list" value="ordered" title="有序编号">1. 编号</button>'
@@ -4534,6 +4659,87 @@ function renderMemoEditor() {
       history: { delay: 800, maxStack: 300 }
     }
   });
+  /* 第4项：测得工具条真实高度写入 --memo-toolbar-h，供手机端 fixed 吸顶时给编辑区补 padding-top */
+  /* 第4项续：手机端工具条动态吸顶——滚过原位才 fixed，滚回取消 */
+  let _toolbarStickyHandler = null, _kbHandler = null;
+  requestAnimationFrame(() => {
+    const _qt = document.querySelector('.ql-toolbar.memo-qtoolbar');
+    if (_qt) document.documentElement.style.setProperty('--memo-toolbar-h', _qt.offsetHeight + 'px');
+    /* 仅手机端启用动态吸顶 */
+    if (window.innerWidth > 720) return;
+    const _ph = document.createElement('div');
+    _ph.className = 'memo-toolbar-placeholder';
+    _ph.style.display = 'none';
+    _qt.parentNode.insertBefore(_ph, _qt);
+    const _threshold = _qt.getBoundingClientRect().bottom;
+    /* 滚动判定：滚过工具条原位则吸顶，否则归位 */
+    const _updateSticky = () => {
+      /* 键盘弹起时工具条始终吸顶贴键盘，不受滚动影响 */
+      if (_qt.classList.contains('toolbar-over-keyboard')) return;
+      const stuck = window.scrollY > _threshold;
+      _qt.classList.toggle('toolbar-sticky', stuck);
+      _ph.style.display = stuck ? '' : 'none';
+    };
+    _toolbarStickyHandler = _updateSticky;
+    window.addEventListener('scroll', _toolbarStickyHandler, { passive: true });
+    /* 方案A：输入法弹起时工具条贴键盘上沿（用 visualViewport 测键盘高度） */
+    /* 关键修复（v104→v105）：上一版只冻了「高度」，没冻「开关」——滚动时
+       offsetTop 跳变会让 _kbOpenNow 误判“键盘关了”，工具条跌落顶端/正文。
+       本版把「是否弹起」也锁死：只有 height 恢复全屏 且 offsetTop 回到近 0、
+       并持续 150ms 才认定“真的收起”，滚动抖动一律忽略。 */
+    const _vv = window.visualViewport;
+    if (_vv) {
+      let _kbOpen = false, _kbCloseTimer = null;
+      /* 弹起检测（仅用于初次捕获）：高度缩小 或 页面被顶上去(offsetTop 为负) */
+      const _kbMaybeOpen = () => (_vv.height < window.innerHeight - 80) || (_vv.offsetTop < -40);
+      /* 收起检测（稳信号）：高度恢复全屏 且 页面不再被顶——两种机型都适用 */
+      const _kbReallyClosed = () => (_vv.height > window.innerHeight - 10) && (_vv.offsetTop > -20);
+      _kbHandler = () => {
+        if (_kbOpen) {
+          /* 已弹起：仅当“确定收起”且持续 150ms 才解除，避免滚动抖动误关 */
+          if (_kbReallyClosed()) {
+            if (!_kbCloseTimer) {
+              _kbCloseTimer = setTimeout(() => {
+                _kbCloseTimer = null;
+                if (_kbReallyClosed()) {
+                  _kbOpen = false;
+                  document.documentElement.style.setProperty('--memo-kb-h', '0px');
+                  _qt.classList.remove('toolbar-over-keyboard');
+                  _updateSticky();
+                }
+              }, 150);
+            }
+          } else if (_kbCloseTimer) {
+            clearTimeout(_kbCloseTimer); _kbCloseTimer = null;
+          }
+          return;
+        }
+        /* 未弹起：初次检测是否弹起并捕获一次键盘高度 */
+        if (_kbMaybeOpen()) {
+          _kbOpen = true;
+          const kb = Math.max(0, window.innerHeight - _vv.offsetTop - _vv.height);
+          document.documentElement.style.setProperty('--memo-kb-h', kb + 'px');
+          _qt.classList.add('toolbar-over-keyboard');
+          if (!_qt.classList.contains('toolbar-sticky')) { _qt.classList.add('toolbar-sticky'); _ph.style.display = ''; }
+        }
+      };
+      _vv.addEventListener('resize', _kbHandler);
+      _vv.addEventListener('scroll', _kbHandler);
+      _kbHandler();
+    }
+    _toolbarStickyHandler(); /* 初始执行一次 */
+  });
+  /* 退出编辑器时清理 scroll / 键盘 监听 */
+  const _oldCancel = window._memoToolbarCleanup;
+  if (_oldCancel) _oldCancel();
+  window._memoToolbarCleanup = () => {
+    if (_toolbarStickyHandler) { window.removeEventListener('scroll', _toolbarStickyHandler); _toolbarStickyHandler = null; }
+    if (_kbHandler && window.visualViewport) { window.visualViewport.removeEventListener('resize', _kbHandler); window.visualViewport.removeEventListener('scroll', _kbHandler); _kbHandler = null; }
+    const _qt2 = document.querySelector('.ql-toolbar.memo-qtoolbar');
+    if (_qt2) { _qt2.classList.remove('toolbar-sticky'); _qt2.classList.remove('toolbar-over-keyboard'); }
+    const _ph2 = document.querySelector('.memo-toolbar-placeholder');
+    if (_ph2) _ph2.remove();
+  };
   /* 旧笔记(.memo-checklist 结构) → Quill 可识别的 checklist，载入编辑区 */
   const initHtml = memoStorageToQuill(n.body || '');
   if (initHtml) memoQuill.clipboard.dangerouslyPasteHTML(initHtml);
@@ -4542,6 +4748,31 @@ function renderMemoEditor() {
     n.body = memoQuillToStorage(memoQuill.root.innerHTML);
     n.updatedAt = Date.now(); save();
   });
+  /* 第3项：手机端编辑区左右滑动切换段落缩进（右滑+1级，左滑退1级） */
+  const _ed = memoQuill.root;
+  let _sx = 0, _sy = 0, _sw = false, _hmoved = false;
+  _ed.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) { _sw = false; return; }
+    _sx = e.touches[0].clientX; _sy = e.touches[0].clientY; _sw = true; _hmoved = false;
+  }, { passive: true });
+  _ed.addEventListener('touchmove', (e) => {
+    if (!_sw) return;
+    const dx = e.touches[0].clientX - _sx, dy = e.touches[0].clientY - _sy;
+    if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy)) {
+      _hmoved = true;
+      if (e.cancelable) e.preventDefault();   // 阻止横向滑动时选中/页面滚动干扰
+    }
+  }, { passive: false });
+  _ed.addEventListener('touchend', (e) => {
+    if (!_sw) return; _sw = false;
+    if (!_hmoved) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - _sx, dy = t.clientY - _sy;
+    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    const cur = memoQuill.getFormat().indent || 0;
+    const next = dx > 0 ? cur + 1 : cur - 1;
+    memoQuill.format('indent', next > 0 ? next : false);
+  }, { passive: true });
   const titleEl = $('memoTitle'), catEl = $('memoCat'), subEl = $('memoSub');
   titleEl.addEventListener('input', () => { n.title = titleEl.value; n.updatedAt = Date.now(); save(); });
   catEl.addEventListener('input', () => { n.cat = catEl.value.trim(); n.updatedAt = Date.now(); save(); });
@@ -4555,11 +4786,16 @@ function openMemoColorModal(kind) {
   const foreColors = ['#000000', '#888888', '#a56738', '#ed7c68', '#fea6bd', '#ffc7d5', '#ffc53c', '#ffd988', '#5fb2eb', '#aab4e7', '#ace087', '#dbde91'];
   const backColors = ['#f8efd3', '#f4cfae', '#f0a9a9', '#f9dee2', '#b6dee5'];
   const colors = kind === 'fore' ? foreColors : backColors;
-  const sw = colors.map(c => '<button class="memo-swatch" data-action="memo-swatch" data-kind="' + kind + '" data-color="' + c + '" style="background:' + c + '"></button>').join('');
+  /* 需求1：色卡默认选中当前色——字体色默认黑色(#000000)，高亮默认无底色('') */
+  const curFmt = (memoQuill && memoQuill.getFormat) ? memoQuill.getFormat() : {};
+  const cur = (kind === 'fore' ? (curFmt.color || '#000000') : (curFmt.background || ''));
+  const curLow = (cur || '').toLowerCase();
+  const sw = colors.map(c => '<button class="memo-swatch' + (((c || '').toLowerCase() === curLow) ? ' active' : '') + '" data-action="memo-swatch" data-kind="' + kind + '" data-color="' + c + '" style="background:' + c + '"></button>').join('');
+  const noneBtn = (kind === 'back') ? '<button class="memo-swatch-none' + (curLow === '' ? ' active' : '') + '" data-action="memo-swatch-none" data-kind="back" title="无高亮底色">无高亮</button>' : '';
   const box = document.createElement('div');
   box.className = 'memo-color-popover';
   box.innerHTML = '<div class="memo-color-pop-head">' + (kind === 'fore' ? '文字颜色' : '高亮颜色') + '</div>'
-    + '<div class="memo-swatches">' + sw + '</div>'
+    + '<div class="memo-swatches">' + sw + noneBtn + '</div>'
     + '<div class="memo-color-custom">自定义颜色：<input type="color" class="memo-color-input" data-kind="' + kind + '" value="' + colors[0] + '"></div>';
   document.body.appendChild(box);
   /* 自定义取色器：拖动用 input 实时套用，选完(change)关闭浮层 */
@@ -4618,6 +4854,16 @@ function memoChatBubble(m) {
     + '<div class="memo-bubble">' + inner + '</div>'
     + '<div class="memo-bubble-time">' + memoFmtTime(m.createdAt) + '</div></div>';
 }
+function memoChatScrollToEnd() {
+  const list = $('memoChatList');
+  const content = $('content');
+  const go = (el) => { if (el) el.scrollTop = el.scrollHeight; };
+  go(list); go(content);
+  /* 手机端整页由 window 滚动，需同时把 window 滚到底（模拟微信聊天贴最新消息） */
+  window.scrollTo(0, document.documentElement.scrollHeight);
+  /* 兜底：重渲染后布局可能未稳定，下一帧再滚一次，确保真正贴底 */
+  requestAnimationFrame(() => { go(list); go(content); window.scrollTo(0, document.documentElement.scrollHeight); });
+}
 function memoChatRefresh() {
   const list = $('memoChatList');
   if (!list) return;
@@ -4628,6 +4874,8 @@ function renderMemoChat() {
   setChrome('速记', '');
   const msgs = memoVisibleChat();
   const msgHTML = msgs.length ? msgs.map(memoChatBubble).join('') : '<div class="empty">还没有速记，下面发条消息给自己吧～</div>';
+  /* 重渲染前记录当前滑块位置(桌面=#memoChatList 内部 overflow；手机=window)，渲染后还原，避免选中/搜索时被拉回顶部 */
+  const _chatSave = _memoScrollBefore(() => $('memoChatList'));
   $('content').innerHTML =
     '<div class="memo-chat">'
     + '<div class="memo-searchbar mod-searchbar">'
@@ -4635,15 +4883,23 @@ function renderMemoChat() {
     + (state.memoChatSearch ? '<button class="memo-search-x" data-action="memo-chat-search-clear">×</button>' : '')
     + '</div>'
     + '<div class="memo-chat-list" id="memoChatList">' + msgHTML + '</div>'
+    + '<div class="memo-chat-foot">'
     + (state.memoSel.length ? '<div class="memo-merge-bar">已选 ' + state.memoSel.length + ' 条 · <button class="btn primary" data-action="memo-merge">合并到备忘录</button> <button class="btn ghost" data-action="memo-sel-clear">取消选择</button></div>' : '')
     + '<div class="memo-chat-input">'
     + '<button class="memo-chat-img" data-action="memo-chat-img" title="发图片">🖼</button>'
-    + '<input class="memo-chat-text" id="memoChatText" placeholder="发条消息给自己…" data-action="memo-chat-text">'
+    + '<textarea class="memo-chat-text" id="memoChatText" placeholder="发条消息给自己…" data-action="memo-chat-text" rows="1"></textarea>'
     + '<button class="memo-chat-send" data-action="memo-chat-send">发送</button>'
-    + '</div></div>';
-  const list = $('memoChatList'); if (list) list.scrollTop = list.scrollHeight;
+    + '</div></div></div>';
+
+  /* 还原滑块位置：选中/搜索等页内重渲染后滑块保持在原处（进入速记/发送由入口与 memoChatSend 强制滚到底） */
+  _memoScrollAfter(() => $('memoChatList'), _chatSave);
+
+  /* 注意：进入速记/发送时才滚到底（见 render() 入口与 memoChatSend），此处不再每次重渲染都滚，避免选中/搜索时滑块被拉回底部 */
   const ti = $('memoChatText');
-  if (ti) ti.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); memoChatSend(); } });
+  /* 手机端：输入法回车=换行（不再发送），仅"发送"按钮发送；输入框随内容自动增高 */
+  if (ti) {
+    ti.addEventListener('input', () => { ti.style.height = 'auto'; ti.style.height = Math.min(ti.scrollHeight, 140) + 'px'; });
+  }
   const ci = document.querySelector('input[data-action="memo-chat-search"]');
   if (ci) ci.addEventListener('compositionend', () => { state.memoChatSearch = ci.value; memoChatRefresh(); });
 }
@@ -4651,6 +4907,6 @@ function memoChatSend() {
   const ti = $('memoChatText'); if (!ti) return;
   const v = ti.value.trim(); if (!v) return;
   state.memoChat.push({ id: uid(), type: 'text', text: v, img: '', createdAt: Date.now() });
-  ti.value = ''; save(); renderMemoChat();
+  ti.value = ''; save(); renderMemoChat(); memoChatScrollToEnd();
   const nt = $('memoChatText'); if (nt) nt.focus();
 }
