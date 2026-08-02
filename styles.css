@@ -1528,3 +1528,285 @@ body:has(.memo-chat) .topbar { position: sticky; top: 0; z-index: 20; }
   }
 }
 
+/* ---------- 备忘录：今日日程 ---------- */
+.memo-schedule {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 16px;
+}
+.memo-schedule-card {
+  background: var(--panel);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 18px;
+}
+.memo-schedule-head {
+  display: flex;
+  align-items: center;        /* 日期与「已完成」垂直居中，处于同一水平线 */
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: nowrap;          /* 日期与「已完成」始终同行，不换行 */
+  margin-bottom: 16px;
+}
+.memo-schedule-head-left { min-width: 0; }   /* 允许左侧收缩，进度不被挤出 */
+.memo-schedule-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: nowrap;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+}
+.memo-schedule-ico { font-size: 22px; flex: 0 0 auto; }
+.memo-schedule-head-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.memo-schedule-date {
+  border: none;
+  background: var(--pink-soft);
+  color: var(--pink-deep);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  flex: 0 0 auto;             /* 日期不被压缩 */
+  white-space: nowrap;
+}
+.memo-schedule-date:hover { background: #ffd6e8; }
+.memo-schedule-progress {
+  color: var(--pink-deep);
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--pink-soft);
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+.memo-schedule-input-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: nowrap;          /* 输入框与「添加」按钮保持同一行 */
+  margin-bottom: 16px;
+}
+.memo-schedule-input {
+  flex: 1;
+  min-width: 0;              /* 关键：允许输入框在窄屏收缩，避免「添加」被挤出页面 */
+  height: auto;
+  min-height: 44px;          /* 单行基准高度，输入增多时由 JS 自动增高，不封顶展示全部内容 */
+  padding: 11px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;       /* 多行时圆角矩形更自然（替代原全圆角胶囊） */
+  background: var(--panel);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.4;
+  font-family: inherit;
+  resize: none;
+  overflow-y: auto;
+  outline: none;
+}
+.memo-schedule-input:focus { border-color: var(--pink); }
+.memo-schedule-add {
+  height: 44px;
+  padding: 0 18px;
+  border: none;
+  border-radius: 14px;
+  background: #9fc6a0;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.memo-schedule-add:hover { background: #8bb88c; }
+.memo-schedule-list { display: flex; flex-direction: column; gap: 10px; }
+.memo-schedule-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--panel-2);
+  border-radius: 12px;
+}
+.memo-schedule-item.done .memo-schedule-text { text-decoration: line-through; color: #768de7; opacity: .55; }
+.memo-schedule-grip {
+  flex: 0 0 auto;
+  color: var(--text-3);
+  font-size: 20px;
+  line-height: 1;
+  cursor: grab;
+  padding: 0 2px;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;   /* 手机拖动时不触发页面滚动 */
+}
+.memo-schedule-grip:active { cursor: grabbing; }
+.memo-schedule-check {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 24px;
+  padding: 0;
+}
+/* 勾选框：空心圆 → 点击填色（✓）代表已完成 */
+.memo-schedule-check .ck {
+  width: 20px; height: 20px; border-radius: 50%;
+  border: 2px solid var(--pink-deep); background: transparent;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 13px; line-height: 1;
+  transition: background .15s, border-color .15s;
+}
+.memo-schedule-item.done .memo-schedule-check .ck {
+  background: var(--pink-deep); border-color: var(--pink-deep);
+}
+.memo-schedule-item.done .memo-schedule-check .ck::after { content: '✓'; }
+/* 拖拽态 */
+.memo-schedule-item.dragging {
+  opacity: .9;
+  box-shadow: 0 6px 18px rgba(0,0,0,.18);
+  background: var(--panel);
+}
+.memo-schedule-item-placeholder {
+  border: 2px dashed var(--border-strong);
+  border-radius: 12px;
+  background: transparent;
+}
+.memo-schedule-text { flex: 1; font-size: 15px; color: #768de7; font-weight: 700; word-break: break-word; }
+.memo-schedule-del {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 18px;
+  cursor: pointer;
+  border-radius: 6px;
+  flex: 0 0 24px;
+}
+.memo-schedule-del:hover { background: #fee2e2; color: #e11d48; }
+.memo-schedule-empty {
+  text-align: center;
+  color: var(--text-3);
+  font-size: 14px;
+  padding: 24px 0;
+  font-style: italic;
+}
+
+/* 窄屏适配：极窄设备下进一步收缩字号/内边距，保证标题行与输入行不换行、不溢出 */
+@media (max-width: 420px) {
+  .memo-schedule-title { font-size: 16px; gap: 6px; }
+  .memo-schedule-ico { font-size: 19px; }
+  .memo-schedule-date { font-size: 12px; padding: 4px 9px; }
+  .memo-schedule-progress { font-size: 11px; padding: 2px 7px; }
+  .memo-schedule-add { padding: 0 14px; font-size: 14px; }
+}
+
+/* 今日日程：月历（内嵌在任务列表下方，融入卡片） */
+.memo-schedule-cal-wrap {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.memo-schedule-cal {
+  width: 100%;
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
+}
+.memo-cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.memo-cal-nav {
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 50%;
+  background: var(--pink-soft);
+  color: var(--pink-deep);
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.memo-cal-nav:hover { background: #ffd6e8; }
+.memo-cal-title { font-size: 17px; font-weight: 700; color: var(--text); }
+.memo-cal-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-3);
+  margin-bottom: 8px;
+}
+.memo-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px 2px;
+}
+.memo-cal-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  justify-self: center;       /* 正常宽度下固定合适大小并居中 */
+  border-radius: 50%;
+  font-size: 14px;
+  color: var(--text);
+  cursor: pointer;
+}
+/* 页面宽度不足时（手机等窄屏），让日期正圆随列宽缩放，避免挤压/溢出 */
+@media (max-width: 480px) {
+  .memo-cal-cell {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1 / 1;      /* 窄屏高度跟随宽度，仍保持 1:1 正圆 */
+    align-self: center;       /* 关键：阻止 grid 默认 stretch 覆盖 aspect-ratio，否则高度坍缩成内容高度、变椭圆 */
+  }
+}
+.memo-cal-cell:hover { background: var(--panel-2); }
+.memo-cal-cell.other { color: var(--text-3); }
+.memo-cal-cell.selected {
+  background: #f7e2c3;
+  color: #6b4a2b;
+}
+.memo-cal-cell.today:not(.selected) {
+  box-shadow: inset 0 0 0 2px var(--pink);
+}
+.memo-cal-day { line-height: 1; }
+.memo-cal-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  margin-top: 3px;
+}
+.memo-cal-dot.pending { background: #ff7eb3; }
+.memo-cal-dot.done { background: #7bc87b; }
+.memo-cal-legend {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+  font-size: 12px;
+  color: var(--text-2);
+}
+

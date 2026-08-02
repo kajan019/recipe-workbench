@@ -271,6 +271,8 @@ let state = {
   memoTagCollapsed: false,// 「全部笔记」下方分类标签是否收起
   memoFavView: false,     // 是否处于「收藏」筛选视图
   memoSub: '',            // 小标签筛选（''=不过滤；点击搜索建议里的小标签时设置）
+  memoScheduleDate: fmtDate(Date.now()), // 今日日程当前选中的日期（YYYY-MM-DD，默认今天）
+  memoScheduleTasks: [],   // 今日日程任务清单：{ id, date, text, done, createdAt }
 };
 let dragSrc = null;
 let nutAgg = null;       // 最近一次营养聚合结果（供点击宏量元素查看 Top3 来源）
@@ -447,6 +449,8 @@ function load() {
         if (Array.isArray(parsed.memoNotes)) state.memoNotes = parsed.memoNotes.map(migrateMemoNote);
         if (Array.isArray(parsed.memoChat)) state.memoChat = parsed.memoChat.map(migrateMemoChat);
         state.memoSel = []; state.memoTag = '__all__'; state.memoTagMobileHidden = false; state.memoSearch = ''; state.memoChatSearch = ''; state.memoEditId = null; state.memoExpandId = null; state.memoTagCollapsed = false; state.memoFavView = false; state.memoSub = '';
+        state.memoScheduleDate = (parsed.memoScheduleDate && /^\d{4}-\d{2}-\d{2}$/.test(parsed.memoScheduleDate)) ? parsed.memoScheduleDate : fmtDate(Date.now());
+        if (Array.isArray(parsed.memoScheduleTasks)) state.memoScheduleTasks = parsed.memoScheduleTasks;
       }
       mergeNutSeed();
       return;
@@ -521,7 +525,7 @@ function migrateNutRecord(r) {
   };
 }
 function save() {
-  try { localStorage.setItem(STORE_KEY, JSON.stringify({ recipes: state.recipes, collections: state.collections, nutfoods: state.nutfoods, nutRecords: state.nutRecords, memoNotes: state.memoNotes, memoChat: state.memoChat })); }
+  try { localStorage.setItem(STORE_KEY, JSON.stringify({ recipes: state.recipes, collections: state.collections, nutfoods: state.nutfoods, nutRecords: state.nutRecords, memoNotes: state.memoNotes, memoChat: state.memoChat, memoScheduleDate: state.memoScheduleDate, memoScheduleTasks: state.memoScheduleTasks })); }
   catch (e) { toast('保存失败：本地存储空间可能已满（图片过多）'); }
   scheduleSync();
 }
@@ -551,7 +555,7 @@ async function githubApi(path, opts) {
 async function githubPush() {
   if (!syncEnabled()) return false;
   const cfg = getSyncCfg();
-  const payload = JSON.stringify({ recipes: state.recipes, collections: state.collections, nutfoods: state.nutfoods, nutRecords: state.nutRecords, memoNotes: state.memoNotes, memoChat: state.memoChat });
+  const payload = JSON.stringify({ recipes: state.recipes, collections: state.collections, nutfoods: state.nutfoods, nutRecords: state.nutRecords, memoNotes: state.memoNotes, memoChat: state.memoChat, memoScheduleDate: state.memoScheduleDate, memoScheduleTasks: state.memoScheduleTasks });
   const apiPath = '/contents/' + syncPath(cfg) + '?ref=' + syncBranch(cfg);
   let sha = null;
   try { const r = await githubApi(apiPath); const j = await r.json(); if (j && j.sha) sha = j.sha; } catch (_) { /* 文件不存在则新建 */ }
@@ -608,6 +612,7 @@ async function githubPull() {
   _merge('nutRecords', migrateNutRecord);
   _merge('memoNotes', migrateMemoNote);
   _merge('memoChat', migrateMemoChat);
+  _merge('memoScheduleTasks', migrateMemoScheduleTask);
   _suppressSync = true; save(); _suppressSync = false;   // 拉取期间抑制自动上传，避免回写
   render();
   updateSyncDot('ok');
@@ -1162,8 +1167,9 @@ const NAV = [
     { view: 'favorites', icon: '📋', label: '菜谱收藏夹' },
   ]},
   { title: '备忘录', items: [
-    { view: 'memo-chat', icon: '💬', label: '速记' },
-    { view: 'memo',      icon: '📝', label: '我的备忘录' },
+    { view: 'memo-schedule', icon: '🗓️', label: '今日日程' },
+    { view: 'memo-chat',     icon: '💬', label: '速记' },
+    { view: 'memo',          icon: '📝', label: '我的备忘录' },
   ]},
   { title: '工具', items: [
     { view: '__sync__', icon: '☁️', label: '云端同步' },
@@ -1236,6 +1242,7 @@ function render() {
   if (state.view === 'filter') { renderFilter(); return; }
   if (state.view === 'nutrition') { rerenderNut(); return; }
   if (state.view === 'favorites') { renderFavorites(); return; }
+  if (state.view === 'memo-schedule') { renderMemoSchedule(); return; }
   if (state.view === 'memo-chat') {
     renderMemoChat();
     /* 仅“进入/切回速记”时自动滚到最新消息；页内重渲染（选中/搜索/删图）不滚动，保持用户当前滑块位置 */
@@ -3436,6 +3443,28 @@ async function handleClick(e) {
     }
     case 'memo-undo': { const b = $('memoBody'); if (b) { b.focus(); document.execCommand('undo'); memoSyncBody(); } break; }
     case 'memo-redo': { const b = $('memoBody'); if (b) { b.focus(); document.execCommand('redo'); memoSyncBody(); } break; }
+    /* 今日日程（月历改为内嵌，不再弹窗） */
+    case 'memo-schedule-prev-month': { memoScheduleCalMonth.month--; if (memoScheduleCalMonth.month < 0) { memoScheduleCalMonth.month = 11; memoScheduleCalMonth.year--; } renderMemoSchedule(); break; }
+    case 'memo-schedule-next-month': { memoScheduleCalMonth.month++; if (memoScheduleCalMonth.month > 11) { memoScheduleCalMonth.month = 0; memoScheduleCalMonth.year++; } renderMemoSchedule(); break; }
+    case 'memo-schedule-pick-date': { state.memoScheduleDate = t.dataset.date; memoScheduleCalMonth = null; renderMemoSchedule(); break; }
+    case 'memo-schedule-add': {
+      const inp = $('memoScheduleInput');
+      const text = inp ? inp.value.trim() : '';
+      if (!text) { toast('请输入任务内容'); break; }
+      state.memoScheduleTasks.push({ id: uid(), date: state.memoScheduleDate || fmtDate(Date.now()), text, done: false, createdAt: Date.now() });
+      save(); renderMemoSchedule(); break;
+    }
+    case 'memo-schedule-toggle': {
+      const id = t.dataset.id;
+      const task = state.memoScheduleTasks.find(x => x.id === id);
+      if (task) { task.done = !task.done; save(); renderMemoSchedule(); }
+      break;
+    }
+    case 'memo-schedule-del': {
+      const id = t.dataset.id;
+      state.memoScheduleTasks = state.memoScheduleTasks.filter(x => x.id !== id);
+      save(); renderMemoSchedule(); break;
+    }
     /* 速记（聊天式） */
     case 'memo-chat-send': memoChatSend(); break;
     case 'memo-chat-img': memoPickImage((src) => { state.memoChat.push({ id: uid(), type: 'image', text: '', img: src, createdAt: Date.now() }); save(); renderMemoChat(); }); break;
@@ -3521,6 +3550,14 @@ function handleKeydown(e) {
     clearTimeout(searchTimers[t.dataset.action]);
     applySearch(t.dataset.action, t.value);
   }
+  if (t.dataset.action === 'memo-schedule-input' && e.key === 'Enter') {
+    if (e.isComposing) return;
+    e.preventDefault();
+    const text = t.value.trim();
+    if (!text) return;
+    state.memoScheduleTasks.push({ id: uid(), date: state.memoScheduleDate || fmtDate(Date.now()), text, done: false, createdAt: Date.now() });
+    save(); renderMemoSchedule();
+  }
 }
 function handleInput(e) {
   const t = e.target;
@@ -3538,6 +3575,7 @@ function handleInput(e) {
     if (e.isComposing) return;
     state.memoChatSearch = t.value; memoChatRefresh(); return;
   }
+  if (t.id === 'memoScheduleInput') { t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; return; }
   if (t.id === 'f-name') { state.editing.name = t.value; return; }
   if (t.id === 'f-video') { state.editing.videoUrl = t.value.trim(); return; }
   if (t.classList.contains('rname')) { const b = findBlock(t.dataset.sec, t.dataset.bid); if (b) { b.name = t.value; syncText(b); } return; }
@@ -3840,6 +3878,16 @@ function migrateMemoChat(m) {
     text: m.text || '',
     img: m.img || '',
     createdAt: m.createdAt || Date.now(),
+  };
+}
+function migrateMemoScheduleTask(t) {
+  t = t || {};
+  return {
+    id: t.id || uid(),
+    date: (t.date && /^\d{4}-\d{2}-\d{2}$/.test(t.date)) ? t.date : fmtDate(Date.now()),
+    text: t.text || '',
+    done: t.done === true,
+    createdAt: t.createdAt || Date.now(),
   };
 }
 
@@ -4824,6 +4872,184 @@ function memoChatRefresh() {
   if (!list) return;
   const msgs = memoVisibleChat();
   list.innerHTML = msgs.length ? msgs.map(memoChatBubble).join('') : '<div class="empty">没有匹配的速记</div>';
+}
+
+/* ---------- 备忘录：今日日程 ---------- */
+let memoScheduleCalMonth = null; // 日历弹窗当前显示的 {year,month}
+function memoScheduleTasksFor(date) {
+  /* 不再按 createdAt 排序，保持数组顺序（拖拽重排后顺序即数组顺序） */
+  return state.memoScheduleTasks.filter(t => t.date === date);
+}
+function memoScheduleMonthDots(year, month) {
+  const byDate = {}, map = {};
+  state.memoScheduleTasks.forEach(t => {
+    if (!t.date) return;
+    const d = new Date(t.date + 'T00:00:00');
+    if (d.getFullYear() === year && d.getMonth() === month) {
+      const day = d.getDate();
+      if (!byDate[day]) byDate[day] = [];
+      byDate[day].push(t);
+    }
+  });
+  Object.keys(byDate).forEach(day => {
+    const list = byDate[day];
+    map[day] = (list.length && list.every(t => t.done)) ? 'done' : 'pending';
+  });
+  return map;
+}
+function memoScheduleCalInner() {
+  const cur = state.memoScheduleDate || fmtDate(Date.now());
+  const curD = new Date(cur + 'T00:00:00');
+  const base = memoScheduleCalMonth || { year: curD.getFullYear(), month: curD.getMonth() };
+  memoScheduleCalMonth = base;
+  const { year, month } = base;
+  const firstDay = new Date(year, month, 1);
+  const startWeek = firstDay.getDay(); // 0=周日
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const prevDays = new Date(year, month, 0).getDate();
+  const dots = memoScheduleMonthDots(year, month);
+  const today = fmtDate(Date.now());
+  let cells = '';
+  for (let i = startWeek - 1; i >= 0; i--) {
+    cells += '<div class="memo-cal-cell other">' + (prevDays - i) + '</div>';
+  }
+  for (let d = 1; d <= daysInMonth; d++) {
+    const ds = fmtDate(new Date(year, month, d).getTime());
+    const selected = ds === cur ? ' selected' : '';
+    const isToday = ds === today ? ' today' : '';
+    const dot = dots[d] ? '<span class="memo-cal-dot ' + dots[d] + '"></span>' : '';
+    cells += '<div class="memo-cal-cell' + selected + isToday + '" data-action="memo-schedule-pick-date" data-date="' + escAttr(ds) + '"><span class="memo-cal-day">' + d + '</span>' + dot + '</div>';
+  }
+  const totalCells = startWeek + daysInMonth;
+  const nextRows = Math.ceil(totalCells / 7) * 7;
+  for (let i = 1; i <= nextRows - totalCells; i++) cells += '<div class="memo-cal-cell other">' + i + '</div>';
+  const headText = year + '年' + (month + 1) + '月';
+  return '<div class="memo-schedule-cal">'
+    + '<div class="memo-cal-head">'
+    + '<button class="memo-cal-nav prev" data-action="memo-schedule-prev-month">‹</button>'
+    + '<div class="memo-cal-title">' + headText + '</div>'
+    + '<button class="memo-cal-nav next" data-action="memo-schedule-next-month">›</button>'
+    + '</div>'
+    + '<div class="memo-cal-weekdays"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div>'
+    + '<div class="memo-cal-grid">' + cells + '</div>'
+    + '<div class="memo-cal-legend"><span class="memo-cal-dot pending"></span>粉点=当日有任务 <span class="memo-cal-dot done"></span>绿点=当日全部完成</div>'
+    + '</div>';
+}
+function renderMemoSchedule() {
+  setChrome('今日日程', '');
+  const date = state.memoScheduleDate || fmtDate(Date.now());
+  const tasks = memoScheduleTasksFor(date);
+  const doneCount = tasks.filter(t => t.done).length;
+  const total = tasks.length;
+  const listHTML = tasks.length ? tasks.map(t =>
+    '<div class="memo-schedule-item ' + (t.done ? 'done' : '') + '" data-id="' + escAttr(t.id) + '">'
+    + '<span class="memo-schedule-grip" aria-label="拖拽排序">⋮</span>'
+    + '<button class="memo-schedule-check" data-action="memo-schedule-toggle" data-id="' + escAttr(t.id) + '" aria-checked="' + (t.done ? 'true' : 'false') + '"><span class="ck"></span></button>'
+    + '<span class="memo-schedule-text">' + escHtml(t.text) + '</span>'
+    + '<button class="memo-schedule-del" data-action="memo-schedule-del" data-id="' + escAttr(t.id) + '">×</button>'
+    + '</div>'
+  ).join('') : '<div class="memo-schedule-empty">暂无任务，添加一条吧✨</div>';
+  $('content').innerHTML =
+    '<div class="memo-schedule">'
+    + '<div class="memo-schedule-card">'
+    + '<div class="memo-schedule-head">'
+    + '<div class="memo-schedule-head-left">'
+    + '<div class="memo-schedule-title"><span class="memo-schedule-ico">🗓️</span>今日日程'
+    + '<span class="memo-schedule-date">' + escHtml(date) + '</span>'
+    + '</div></div>'
+    + '<div class="memo-schedule-progress">' + doneCount + '/' + total + ' 已完成</div>'
+    + '</div>'
+    + '<div class="memo-schedule-input-row">'
+    + '<textarea class="memo-schedule-input" id="memoScheduleInput" data-action="memo-schedule-input" placeholder="添加新任务，girl~ 💕" rows="1"></textarea>'
+    + '<button class="memo-schedule-add" data-action="memo-schedule-add">+ 添加</button>'
+    + '</div>'
+    + '<div class="memo-schedule-list" id="memoScheduleList">' + listHTML + '</div>'
+    + '<div class="memo-schedule-cal-wrap">' + memoScheduleCalInner() + '</div>'
+    + '</div></div>';
+  initScheduleDrag();
+}
+/* 拖拽排序：把当前日期的任务按新顺序（ids）写回全局数组，保持该日期块内顺序、不动其他日期 */
+function reorderScheduleTasks(ids) {
+  const date = state.memoScheduleDate || fmtDate(Date.now());
+  const reordered = ids.map(id => state.memoScheduleTasks.find(t => t.id === id)).filter(Boolean);
+  let i = 0;
+  state.memoScheduleTasks = state.memoScheduleTasks.map(t => {
+    if (t.date === date && i < reordered.length) { const nt = reordered[i]; i++; return nt; }
+    return t;
+  });
+  save();
+}
+/* 初始化任务列表拖拽（指针事件，桌面/手机触摸通用）。仅手柄 .memo-schedule-grip 触发 */
+function initScheduleDrag() {
+  const list = $('memoScheduleList');
+  if (!list) return;
+  let dragEl = null, started = false, placeholder = null, grabDX = 0, grabDY = 0;
+  list.addEventListener('pointerdown', onDown);
+  function onDown(e) {
+    const grip = e.target.closest('.memo-schedule-grip');
+    if (!grip) return;
+    const item = grip.closest('.memo-schedule-item');
+    if (!item) return;
+    e.preventDefault();
+    dragEl = item;
+    const rect = dragEl.getBoundingClientRect();
+    grabDX = e.clientX - rect.left;
+    grabDY = e.clientY - rect.top;
+    started = false;
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onUp);
+  }
+  function onMove(e) {
+    if (!dragEl) return;
+    if (!started) {
+      started = true;
+      const rect = dragEl.getBoundingClientRect();
+      placeholder = document.createElement('div');
+      placeholder.className = 'memo-schedule-item-placeholder';
+      placeholder.style.height = rect.height + 'px';
+      dragEl.classList.add('dragging');
+      dragEl.style.position = 'fixed';
+      dragEl.style.width = rect.width + 'px';
+      dragEl.style.left = rect.left + 'px';
+      dragEl.style.top = rect.top + 'px';
+      dragEl.style.zIndex = '100';
+      dragEl.style.pointerEvents = 'none';
+      dragEl.parentNode.insertBefore(placeholder, dragEl);
+    }
+    dragEl.style.left = (e.clientX - grabDX) + 'px';
+    dragEl.style.top = (e.clientY - grabDY) + 'px';
+    dragEl.style.pointerEvents = 'none';
+    const under = document.elementFromPoint(e.clientX, e.clientY);
+    const overItem = under && under.closest('.memo-schedule-item');
+    if (overItem && overItem !== dragEl && overItem !== placeholder) {
+      const r = overItem.getBoundingClientRect();
+      if ((e.clientY - r.top) < (r.height / 2)) overItem.parentNode.insertBefore(placeholder, overItem);
+      else overItem.parentNode.insertBefore(placeholder, overItem.nextSibling);
+    }
+  }
+  function onUp() {
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+    document.removeEventListener('pointercancel', onUp);
+    if (!dragEl) return;
+    if (started) {
+      dragEl.style.position = '';
+      dragEl.style.width = '';
+      dragEl.style.left = '';
+      dragEl.style.top = '';
+      dragEl.style.zIndex = '';
+      dragEl.style.pointerEvents = '';
+      dragEl.classList.remove('dragging');
+      if (placeholder && placeholder.parentNode) {
+        placeholder.parentNode.insertBefore(dragEl, placeholder);
+        placeholder.parentNode.removeChild(placeholder);
+      }
+      const ids = Array.from(list.querySelectorAll('.memo-schedule-item')).map(el => el.dataset.id);
+      reorderScheduleTasks(ids);
+    }
+    dragEl = null; started = false; placeholder = null;
+  }
 }
 function renderMemoChat() {
   setChrome('速记', '');
