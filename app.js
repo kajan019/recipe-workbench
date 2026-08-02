@@ -4659,12 +4659,14 @@ function renderMemoEditor() {
       history: { delay: 800, maxStack: 300 }
     }
   });
-  /* 第4项：测得工具条真实高度写入 --memo-toolbar-h，供手机端 fixed 吸顶时给编辑区补 padding-top */
-  /* 第4项续：手机端工具条动态吸顶——滚过原位才 fixed，滚回取消 */
-  let _toolbarStickyHandler = null, _kbHandler = null;
+  /* 第6项：手机端工具条动态吸顶 + 键盘贴边（统一判定，修复 ivi.cx WKWebView 不吸住 & 滑回不取消吸底） */
+  let _toolbarStickyHandler = null, _kbCloseTimer = null, _onFocusInRef = null, _onFocusOutRef = null, _vvHandlerRef = null, _kbUp = false, _kbH = 0;
   requestAnimationFrame(() => {
     const _qt = document.querySelector('.ql-toolbar.memo-qtoolbar');
     if (_qt) document.documentElement.style.setProperty('--memo-toolbar-h', _qt.offsetHeight + 'px');
+    /* 进编辑器不自动弹键盘：渲染后立即让任何被自动聚焦的元素失焦（ivi.cx 的 webview 会默认聚焦编辑区） */
+    try { const _a = document.activeElement; if (_a && _a !== document.body) _a.blur(); } catch (_) {}
+    if (memoQuill && memoQuill.hasFocus && memoQuill.hasFocus()) { try { memoQuill.blur(); } catch (_) {} }
     /* 仅手机端启用动态吸顶 */
     if (window.innerWidth > 720) return;
     const _ph = document.createElement('div');
@@ -4672,71 +4674,83 @@ function renderMemoEditor() {
     _ph.style.display = 'none';
     _qt.parentNode.insertBefore(_ph, _qt);
     const _threshold = _qt.getBoundingClientRect().bottom;
-    /* 滚动判定：滚过工具条原位则吸顶，否则归位 */
-    const _updateSticky = () => {
-      /* 键盘弹起时工具条始终吸顶贴键盘，不受滚动影响 */
-      if (_qt.classList.contains('toolbar-over-keyboard')) return;
+    const _editWrap = document.querySelector('.memo-edit');
+    const _within = (el) => el && _editWrap && _editWrap.contains(el);
+    /* 统一判定（修复 Bug2：去掉“键盘模式下忽略滚动”的硬 return）：
+       键盘弹起且滑过原位→吸住（测到键盘高度则贴键盘上沿，否则吸顶兜底）；
+       滑回原位→归位；普通滑过原位→吸顶。 */
+    const _updateToolbar = () => {
       const stuck = window.scrollY > _threshold;
-      _qt.classList.toggle('toolbar-sticky', stuck);
-      _ph.style.display = stuck ? '' : 'none';
+      if (_kbUp && stuck) {
+        _qt.classList.add('toolbar-sticky');
+        _ph.style.display = '';
+        if (_kbH > 0) _qt.classList.add('toolbar-over-keyboard');
+        else _qt.classList.remove('toolbar-over-keyboard');
+      } else if (stuck) {
+        _qt.classList.add('toolbar-sticky');
+        _qt.classList.remove('toolbar-over-keyboard');
+        _ph.style.display = '';
+      } else {
+        _qt.classList.remove('toolbar-sticky', 'toolbar-over-keyboard');
+        _ph.style.display = 'none';
+      }
     };
-    _toolbarStickyHandler = _updateSticky;
+    _toolbarStickyHandler = _updateToolbar;
     window.addEventListener('scroll', _toolbarStickyHandler, { passive: true });
-    /* 方案A：输入法弹起时工具条贴键盘上沿（用 visualViewport 测键盘高度） */
-    /* 关键修复（v104→v105）：上一版只冻了「高度」，没冻「开关」——滚动时
-       offsetTop 跳变会让 _kbOpenNow 误判“键盘关了”，工具条跌落顶端/正文。
-       本版把「是否弹起」也锁死：只有 height 恢复全屏 且 offsetTop 回到近 0、
-       并持续 150ms 才认定“真的收起”，滚动抖动一律忽略。 */
+    /* 键盘高度测量：Safari 弹键盘会缩小 visualViewport→拿到真实高度；
+       ivi.cx WKWebView 键盘盖页面不缩小→返回 0，走吸顶兜底（保证“吸得住”）。 */
+    const _measureKb = () => {
+      const _vv = window.visualViewport;
+      if (_vv && _vv.height < window.innerHeight - 10) {
+        _kbH = Math.max(0, window.innerHeight - _vv.offsetTop - _vv.height);
+      } else { _kbH = 0; }
+      document.documentElement.style.setProperty('--memo-kb-h', _kbH + 'px');
+      return _kbH;
+    };
+    /* 键盘弹起判定：改以“编辑区获得焦点”为准（ivi.cx 也能可靠触发，不再依赖屏幕高度缩小） */
+    const _onFocusIn = (e) => {
+      if (!_within(e.target)) return;
+      _kbUp = true;
+      if (_kbCloseTimer) { clearTimeout(_kbCloseTimer); _kbCloseTimer = null; }
+      _measureKb();
+      _updateToolbar();
+    };
+    const _onFocusOut = () => {
+      if (!_kbUp) return;
+      if (_kbCloseTimer) clearTimeout(_kbCloseTimer);
+      _kbCloseTimer = setTimeout(() => {
+        _kbCloseTimer = null;
+        const _a = document.activeElement;
+        /* 焦点仍在编辑区内（如点了格式按钮）→ 保持键盘弹起，工具条不闪 */
+        if (_within(_a) && _a !== document.body) return;
+        _kbUp = false; _kbH = 0;
+        document.documentElement.style.setProperty('--memo-kb-h', '0px');
+        _updateToolbar();
+      }, 250);
+    };
+    document.addEventListener('focusin', _onFocusIn);
+    document.addEventListener('focusout', _onFocusOut);
+    _onFocusInRef = _onFocusIn; _onFocusOutRef = _onFocusOut;
+    /* visualViewport 仅作高度刷新（Safari 缩小时实时更新贴键盘位置） */
     const _vv = window.visualViewport;
     if (_vv) {
-      let _kbOpen = false, _kbCloseTimer = null;
-      /* 弹起检测（仅用于初次捕获）：高度缩小 或 页面被顶上去(offsetTop 为负) */
-      const _kbMaybeOpen = () => (_vv.height < window.innerHeight - 80) || (_vv.offsetTop < -40);
-      /* 收起检测（稳信号）：高度恢复全屏 且 页面不再被顶——两种机型都适用 */
-      const _kbReallyClosed = () => (_vv.height > window.innerHeight - 10) && (_vv.offsetTop > -20);
-      _kbHandler = () => {
-        if (_kbOpen) {
-          /* 已弹起：仅当“确定收起”且持续 150ms 才解除，避免滚动抖动误关 */
-          if (_kbReallyClosed()) {
-            if (!_kbCloseTimer) {
-              _kbCloseTimer = setTimeout(() => {
-                _kbCloseTimer = null;
-                if (_kbReallyClosed()) {
-                  _kbOpen = false;
-                  document.documentElement.style.setProperty('--memo-kb-h', '0px');
-                  _qt.classList.remove('toolbar-over-keyboard');
-                  _updateSticky();
-                }
-              }, 150);
-            }
-          } else if (_kbCloseTimer) {
-            clearTimeout(_kbCloseTimer); _kbCloseTimer = null;
-          }
-          return;
-        }
-        /* 未弹起：初次检测是否弹起并捕获一次键盘高度 */
-        if (_kbMaybeOpen()) {
-          _kbOpen = true;
-          const kb = Math.max(0, window.innerHeight - _vv.offsetTop - _vv.height);
-          document.documentElement.style.setProperty('--memo-kb-h', kb + 'px');
-          _qt.classList.add('toolbar-over-keyboard');
-          if (!_qt.classList.contains('toolbar-sticky')) { _qt.classList.add('toolbar-sticky'); _ph.style.display = ''; }
-        }
-      };
-      _vv.addEventListener('resize', _kbHandler);
-      _vv.addEventListener('scroll', _kbHandler);
-      _kbHandler();
+      _vvHandlerRef = () => { _measureKb(); if (_kbUp) _updateToolbar(); };
+      _vv.addEventListener('resize', _vvHandlerRef);
+      _vv.addEventListener('scroll', _vvHandlerRef);
     }
-    _toolbarStickyHandler(); /* 初始执行一次 */
+    _updateToolbar(); /* 初始执行一次 */
   });
   /* 退出编辑器时清理 scroll / 键盘 监听 */
   const _oldCancel = window._memoToolbarCleanup;
   if (_oldCancel) _oldCancel();
   window._memoToolbarCleanup = () => {
     if (_toolbarStickyHandler) { window.removeEventListener('scroll', _toolbarStickyHandler); _toolbarStickyHandler = null; }
-    if (_kbHandler && window.visualViewport) { window.visualViewport.removeEventListener('resize', _kbHandler); window.visualViewport.removeEventListener('scroll', _kbHandler); _kbHandler = null; }
+    if (_onFocusInRef) { document.removeEventListener('focusin', _onFocusInRef); _onFocusInRef = null; }
+    if (_onFocusOutRef) { document.removeEventListener('focusout', _onFocusOutRef); _onFocusOutRef = null; }
+    if (_vvHandlerRef && window.visualViewport) { window.visualViewport.removeEventListener('resize', _vvHandlerRef); window.visualViewport.removeEventListener('scroll', _vvHandlerRef); _vvHandlerRef = null; }
+    if (_kbCloseTimer) { clearTimeout(_kbCloseTimer); _kbCloseTimer = null; }
     const _qt2 = document.querySelector('.ql-toolbar.memo-qtoolbar');
-    if (_qt2) { _qt2.classList.remove('toolbar-sticky'); _qt2.classList.remove('toolbar-over-keyboard'); }
+    if (_qt2) { _qt2.classList.remove('toolbar-sticky', 'toolbar-over-keyboard'); }
     const _ph2 = document.querySelector('.memo-toolbar-placeholder');
     if (_ph2) _ph2.remove();
   };
