@@ -97,6 +97,16 @@ body {
   background: var(--panel); flex: 0 0 auto;
 }
 .nav-item.active .nav-ico { background: #fff; }
+.nav-label { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: visible; }
+.nav-trash {
+  flex: 0 0 auto; margin-left: auto;
+  border: none; background: transparent; cursor: pointer;
+  font-size: 15px; line-height: 1; padding: 6px 7px; border-radius: 8px;
+  color: var(--text-2); opacity: .6;
+  transition: background .15s, opacity .15s, color .15s, transform .12s;
+}
+.nav-trash:hover { background: var(--panel-2); opacity: 1; transform: translateX(-1px); }
+.nav-item.active .nav-trash { opacity: 1; color: var(--brand-2); }
 
 .sidebar-foot { margin-top: auto; padding: 12px 8px 0; border-top: 1px solid var(--border); }
 .foot-line { font-size: 11px; color: var(--text-2); }
@@ -192,7 +202,8 @@ body {
   color: var(--text-3); font-size: 13px; overflow: hidden;
   background-size: cover; background-position: center;
 }
-.recipe-body { padding: 12px 13px 14px; }
+.recipe-body { padding: 12px 13px 22px; }
+.recipe-updated { position: absolute; right: 9px; bottom: 7px; font-size: 10.5px; color: var(--text-3); pointer-events: none; }
 .recipe-name { font-weight: 700; font-size: 15px; margin-bottom: 8px; word-break: break-word; }
 .tagrow { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
 .mini-tag {
@@ -1103,6 +1114,8 @@ body {
   font-family: inherit; font-size: 13.5px; line-height: 1.6;
 }
 .batch-input:focus { outline: none; border-color: var(--brand); }
+/* [v165] 菜谱编辑器内批量文本框：高度随内容自适应、禁用滑块、超宽自动换行（仅限 .editor 内，不影响营养库导入框） */
+.editor .batch-input { resize: none; height: auto; overflow: hidden; white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; }
 .batch-actions { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
 .batch-hint { font-size: 12px; color: var(--text-3); }
 
@@ -1126,7 +1139,9 @@ body {
 .runit { flex: 0 0 76px; width: 76px; padding: 6px 4px; border: 1px solid var(--border-strong); border-radius: 6px; font-size: 13.5px; font-family: inherit; background: #fff; }
 .rname:focus, .ramount:focus, .runit:focus { outline: none; border-color: var(--brand); }
 .rnote, .rsteptext {
-  flex: 1; min-height: 38px; resize: vertical; padding: 6px 8px;
+  flex: 1; min-height: 38px; resize: none; height: auto; overflow: hidden;
+  white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere;
+  padding: 6px 8px;
   border: 1px solid var(--border-strong); border-radius: 6px; font-size: 13.5px; font-family: inherit;
 }
 .rnote { background: #fffdf6; }
@@ -1176,8 +1191,8 @@ body {
 .view-item, .view-step { font-size: 14px; padding: 4px 0; border-bottom: 1px dashed var(--border); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 /* 步骤 1234 编号 */
 .view-step .step-no { flex: 0 0 auto; min-width: 22px; height: 22px; line-height: 22px; text-align: center; border-radius: 50%; background: var(--accent); color: #fff; font-size: 12px; font-weight: 600; }
-.view-step .step-text { flex: 1 1 auto; }
-.view-note { font-size: 13px; color: var(--amber); background: var(--amber-soft); border-radius: 6px; padding: 6px 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.view-step .step-text { flex: 1 1 auto;  white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; }
+.view-note { font-size: 13px; color: var(--amber); background: var(--amber-soft); border-radius: 6px; padding: 6px 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;  white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; }
 .view-empty { color: var(--text-3); }
 .v-thumb { width: 42px; height: 42px; border-radius: 6px; border: 1px solid var(--border); background-size: cover; background-position: center; cursor: zoom-in; flex: 0 0 auto; }
 /* 只读模式：带图的烹饪步骤，文字与图片左右分栏；图片高度固定 4 行文字，放大并保持一致 */
@@ -1315,9 +1330,7 @@ body {
   }
   .memo-card-grip:active { cursor: grabbing; }
   .memo-card-main { flex: 1; min-width: 0; }
-  /* [v163] 屏蔽 .ql-ui 原生点击：勾选交由 app.js 委托处理（用 .ql-ui 真实矩形判定命中，不靠 e.target），
-     同时阻止 Quill 桌面端原生勾选与我们的委托在桌面端相互抵消（pointer-events:none 让原生点不到方框）。 */
-  .ql-editor li > .ql-ui { pointer-events: none; }
+  /* [v164] 待办勾选交回 Quill 原生，移除自写委托与触摸拦截（见 app.js） */
 }
 .memo-card.expanded .memo-card-grip { display: none; }
 .memo-card-actions { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; white-space: nowrap; }
@@ -1890,3 +1903,23 @@ body:has(.memo-chat) .topbar { position: sticky; top: 0; z-index: 20; }
   color: var(--text-2);
 }
 
+/* 回收站（菜谱 / 备忘录，v167 新增） */
+.trash-note { font-size: 12.5px; color: var(--text-2); background: var(--amber-soft); border-radius: 10px; padding: 8px 12px; margin-bottom: 12px; line-height: 1.6; }
+.trash-list { display: flex; flex-direction: column; gap: 8px; }
+.trash-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; cursor: pointer; transition: border-color .15s; }
+.trash-item:hover { border-color: var(--brand); }
+.trash-info { flex: 1 1 auto; min-width: 0; }
+.trash-name { font-weight: 600; font-size: 14px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.trash-meta { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+.trash-actions { display: flex; gap: 6px; flex: 0 0 auto; }
+.trash-actions .btn.sm { padding: 5px 10px; font-size: 12.5px; }
+/* 回收站·只读查看弹窗（复用 .view 样式，限制高度可滚） */
+.modal-panel.trash-view { max-height: 88vh; display: flex; flex-direction: column; }
+.modal-panel.trash-view .modal-head { flex: 0 0 auto; }
+.modal-panel.trash-view .modal-body { flex: 1 1 auto; overflow: auto; padding: 0; }
+.modal-panel.trash-view .view { padding: 14px 16px 22px; }
+.memo-card-readonly { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.memo-card-readonly .memo-card-top { padding: 10px 12px 4px; }
+.memo-card-readonly .memo-card-title { font-weight: 700; font-size: 15px; color: var(--text); }
+.memo-card-readonly .memo-card-body { padding: 4px 12px 10px; }
+.memo-card-readonly .memo-card-foot { padding: 6px 12px; border-top: 1px solid var(--border); }

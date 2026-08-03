@@ -273,6 +273,9 @@ let state = {
   memoSub: '',            // 小标签筛选（''=不过滤；点击搜索建议里的小标签时设置）
   memoScheduleDate: fmtDate(Date.now()), // 今日日程当前选中的日期（YYYY-MM-DD，默认今天）
   memoScheduleTasks: [],   // 今日日程任务清单：{ id, date, text, done, createdAt }
+  /* 回收站（软删除，30 天自动清空；deletedAt 为删除时间戳） */
+  recipeTrash: [],          // 菜谱回收站
+  memoTrash: [],            // 备忘录回收站
 };
 let dragSrc = null;
 let nutAgg = null;       // 最近一次营养聚合结果（供点击宏量元素查看 Top3 来源）
@@ -448,11 +451,14 @@ function load() {
         if (Array.isArray(parsed.nutRecords)) state.nutRecords = parsed.nutRecords.map(migrateNutRecord);
         if (Array.isArray(parsed.memoNotes)) state.memoNotes = parsed.memoNotes.map(migrateMemoNote);
         if (Array.isArray(parsed.memoChat)) state.memoChat = parsed.memoChat.map(migrateMemoChat);
+        if (Array.isArray(parsed.recipeTrash)) state.recipeTrash = parsed.recipeTrash;
+        if (Array.isArray(parsed.memoTrash)) state.memoTrash = parsed.memoTrash;
         state.memoSel = []; state.memoTag = '__all__'; state.memoTagMobileHidden = false; state.memoSearch = ''; state.memoChatSearch = ''; state.memoEditId = null; state.memoExpandId = null; state.memoTagCollapsed = false; state.memoFavView = false; state.memoSub = '';
         state.memoScheduleDate = (parsed.memoScheduleDate && /^\d{4}-\d{2}-\d{2}$/.test(parsed.memoScheduleDate)) ? parsed.memoScheduleDate : fmtDate(Date.now());
         if (Array.isArray(parsed.memoScheduleTasks)) state.memoScheduleTasks = parsed.memoScheduleTasks;
       }
       mergeNutSeed();
+      purgeExpiredTrash();
       return;
     }
   } catch (e) { console.warn('读取本地数据失败', e); }
@@ -525,7 +531,7 @@ function migrateNutRecord(r) {
   };
 }
 function save() {
-  try { localStorage.setItem(STORE_KEY, JSON.stringify({ recipes: state.recipes, collections: state.collections, nutfoods: state.nutfoods, nutRecords: state.nutRecords, memoNotes: state.memoNotes, memoChat: state.memoChat, memoScheduleDate: state.memoScheduleDate, memoScheduleTasks: state.memoScheduleTasks })); }
+  try { localStorage.setItem(STORE_KEY, JSON.stringify({ recipes: state.recipes, collections: state.collections, nutfoods: state.nutfoods, nutRecords: state.nutRecords, memoNotes: state.memoNotes, memoChat: state.memoChat, memoScheduleDate: state.memoScheduleDate, memoScheduleTasks: state.memoScheduleTasks, recipeTrash: state.recipeTrash, memoTrash: state.memoTrash })); }
   catch (e) { toast('保存失败：本地存储空间可能已满（图片过多）'); }
   scheduleSync();
 }
@@ -555,7 +561,7 @@ async function githubApi(path, opts) {
 async function githubPush() {
   if (!syncEnabled()) return false;
   const cfg = getSyncCfg();
-  const payload = JSON.stringify({ recipes: state.recipes, collections: state.collections, nutfoods: state.nutfoods, nutRecords: state.nutRecords, memoNotes: state.memoNotes, memoChat: state.memoChat, memoScheduleDate: state.memoScheduleDate, memoScheduleTasks: state.memoScheduleTasks });
+  const payload = JSON.stringify({ recipes: state.recipes, collections: state.collections, nutfoods: state.nutfoods, nutRecords: state.nutRecords, memoNotes: state.memoNotes, memoChat: state.memoChat, memoScheduleDate: state.memoScheduleDate, memoScheduleTasks: state.memoScheduleTasks, recipeTrash: state.recipeTrash, memoTrash: state.memoTrash });
   const apiPath = '/contents/' + syncPath(cfg) + '?ref=' + syncBranch(cfg);
   let sha = null;
   try { const r = await githubApi(apiPath); const j = await r.json(); if (j && j.sha) sha = j.sha; } catch (_) { /* 文件不存在则新建 */ }
@@ -606,6 +612,8 @@ async function githubPull() {
   state.nutRecords = Array.isArray(data.nutRecords) ? data.nutRecords.map(migrateNutRecord) : [];
   state.memoNotes = Array.isArray(data.memoNotes) ? data.memoNotes.map(migrateMemoNote) : [];
   state.memoChat = Array.isArray(data.memoChat) ? data.memoChat.map(migrateMemoChat) : [];
+  state.recipeTrash = Array.isArray(data.recipeTrash) ? data.recipeTrash : [];
+  state.memoTrash = Array.isArray(data.memoTrash) ? data.memoTrash : [];
   state.memoScheduleDate = (data.memoScheduleDate && /^\d{4}-\d{2}-\d{2}$/.test(data.memoScheduleDate)) ? data.memoScheduleDate : fmtDate(Date.now());
   state.memoScheduleTasks = Array.isArray(data.memoScheduleTasks) ? data.memoScheduleTasks : [];
   _suppressSync = true; save(); _suppressSync = false;   // 拉取期间抑制自动上传，避免回写
@@ -848,11 +856,14 @@ function requestDelete(kind, id) {
   } else {
     const c = state.collections.find(x => x.id === id); if (!c) return; name = c.title || '未命名收藏';
   }
+  const delTip = (kind === 'recipe')
+    ? ('将移入回收站，' + TRASH_TTL_DAYS + ' 天内可在「回收站」恢复。')
+    : '此操作不可撤销。';
   $('modalRoot').innerHTML = `
     <div class="modal-mask" data-action="modal-close">
       <div class="modal-panel del-confirm">
         <div class="modal-head">删除确认<span class="modal-close" data-action="modal-close">×</span></div>
-        <div class="del-confirm-text">确定要删除「${escHtml(name)}」吗？<br>此操作不可撤销。</div>
+        <div class="del-confirm-text">确定要删除「${escHtml(name)}」吗？<br>${delTip}</div>
         <div class="modal-actions">
           <button class="btn" data-action="modal-close">取消</button>
           <button class="btn danger" data-action="do-delete" data-kind="${escAttr(kind)}" data-did="${escAttr(id)}">删除</button>
@@ -1129,7 +1140,7 @@ function downloadText(name, text) {
 /* 以后加「备忘录 / 行程」等模块，只需在 NAV 里加一个分组即可，两端自动出现 */
 const NAV = [
   { title: '我的菜板', items: [
-    { view: 'library',   icon: '📖', label: '菜谱库' },
+    { view: 'library',   icon: '📖', label: '菜谱库', trashView: 'recipe-trash' },
     { view: 'purchase',  icon: '🛒', label: '点菜采购' },
     { view: 'filter',    icon: '🏷️', label: '菜谱分类' },
     { view: 'nutrition', icon: '🔥', label: '营养热量' },
@@ -1138,7 +1149,7 @@ const NAV = [
   { title: '备忘录', items: [
     { view: 'memo-schedule', icon: '🗓️', label: '今日日程' },
     { view: 'memo-chat',     icon: '💬', label: '速记' },
-    { view: 'memo',          icon: '📝', label: '我的备忘录' },
+    { view: 'memo',          icon: '📝', label: '我的备忘录', trashView: 'memo-trash' },
   ]},
   { title: '工具', items: [
     { view: '__sync__', icon: '☁️', label: '云端同步' },
@@ -1150,9 +1161,9 @@ function renderNav() {
     <div class="nav-group">
       <div class="nav-group-title">${escHtml(g.title)}</div>
       ${g.items.map(it => `
-        <button class="nav-item" data-view="${escAttr(it.view)}">
-          <span class="nav-ico">${it.icon}</span><span>${escHtml(it.label)}</span>
-        </button>`).join('')}
+        <div class="nav-item" data-view="${escAttr(it.view)}">
+          <span class="nav-ico">${it.icon}</span><span class="nav-label">${escHtml(it.label)}</span>${it.trashView ? `<button class="nav-trash" data-view="${escAttr(it.trashView)}" title="回收站" aria-label="回收站">🗑️</button>` : ''}
+        </div>`).join('')}
     </div>`).join('');
   const nav = document.getElementById('nav');
   const drawerNav = document.getElementById('drawerNav');
@@ -1175,6 +1186,13 @@ function toggleDrawer() {
   d.classList.contains('open') ? closeDrawer() : openDrawer();
 }
 function onChromeClick(e) {
+  const trashBtn = e.target.closest('.nav-trash');
+  if (trashBtn) {
+    const v = trashBtn.dataset.view;
+    closeDrawer();
+    if (v) navigate(v);
+    return;
+  }
   const navItem = e.target.closest('.nav-item');
   if (navItem) {
     const v = navItem.dataset.view;
@@ -1200,7 +1218,10 @@ let _memoSchedActive = false;
 function render() {
   document.querySelectorAll('.nav-item').forEach(n => {
     const v = n.dataset.view;
-    n.classList.toggle('active', !!v && v !== '__sync__' && v === state.view);
+    const isActive = !!v && v !== '__sync__' && (v === state.view
+      || (state.view === 'recipe-trash' && v === 'library')
+      || (state.view === 'memo-trash' && v === 'memo'));
+    n.classList.toggle('active', isActive);
   });
   const wasInChat = _memoChatActive;
   _memoChatActive = state.view === 'memo-chat';
@@ -1215,6 +1236,7 @@ function render() {
   if (state.view === 'filter') { renderFilter(); return; }
   if (state.view === 'nutrition') { rerenderNut(); return; }
   if (state.view === 'favorites') { renderFavorites(); return; }
+  if (state.view === 'recipe-trash') { renderRecipeTrash(); return; }
   if (state.view === 'memo-schedule') {
     /* 每次进入该组件时，月度日历默认回到今日（仅“进入”时重置，组件内翻月/选日期不受影响） */
     if (enteringSchedule) {
@@ -1231,6 +1253,7 @@ function render() {
     return;
   }
   if (state.view === 'memo') { renderMemo(); return; }
+  if (state.view === 'memo-trash') { renderMemoTrash(); return; }
 }
 function setChrome(crumb, actionsHTML) {
   $('crumb').textContent = crumb;
@@ -1258,7 +1281,9 @@ function recipeMatches(r, q) {
 function renderLibrary() {
   setChrome('绵绵的工作台', `<button class="btn primary" data-action="open-editor-new">＋ 新增菜谱</button>`);
   const q = (state.search || '').trim();
-  const list = q ? state.recipes.filter(r => recipeMatches(r, q)) : state.recipes;
+  // 按修改时间倒序：新修改的排在前面（无 updatedAt 的旧菜谱视为最早，排末尾）
+  const base = state.recipes.slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  const list = q ? base.filter(r => recipeMatches(r, q)) : base;
   const content = $('content');
   const searchBar = `
     <div class="mod-searchbar">
@@ -1332,7 +1357,7 @@ function recipeCardHTML(r) {
       <div class="recipe-body">
         <div class="recipe-name">${escHtml(r.name) || '未命名菜谱'}</div>
         <div class="tagrow">${tags}</div>
-        <div class="recipe-meta">${countText(r)}</div>
+        ${r.updatedAt ? `<div class="recipe-updated">${memoFmtTime(r.updatedAt)}</div>` : ''}
       </div>
     </div>`;
 }
@@ -1629,6 +1654,8 @@ function refreshSection(key) {
   body.innerHTML = sectionBodyHTML(key);
   if (key === 'prep') $('cnt-' + key).textContent = `${state.editing.sections.prep.length} 组`;
   else $('cnt-' + key).textContent = `${itemCount(key)} 项`;
+  /* [v165] 初次渲染即按内容撑开高度，编辑已有菜谱时展示全部文本 */
+  body.querySelectorAll('textarea.rnote, textarea.rsteptext, textarea.batch-input').forEach(autoGrowTextarea);
 }
 function sectionBodyHTML(key) {
   if (key === 'prep') return prepSectionHTML();
@@ -2855,46 +2882,9 @@ function openNutFoodModal(id, name) {
 }
 
 /* ---------------- 事件：点击 ---------------- */
-/* [v155] 编辑器内待办框手机端点击切换：与卡片预览同款 click 委托，并加 touchend 兜底（个别机型 contenteditable 内 click 不触发）。
-   经 jsdom 实测：用 memoQuill.getLines() 逐行累加定位 li（li0→0, li1→3），再 formatLine 切 checked/unchecked → 触发 text-change 自动存盘。 */
-let _memoTodoLastLi = null, _memoTodoLastMs = 0;
-/* [v163] 用浏览器真实渲染几何判定勾选区，不再猜坐标偏移。
-   document.elementFromPoint 取实际命中的元素 → 其所在待办行 li；
-   再量该行 .ql-ui（方框）的真实矩形，勾选区 = 方框左侧(含手指容差) 到 「第一个字起始 x - 2px」为止。
-   第一个字起始 x = li.left + padding-left，作为硬边界：点到文字及之后一律放行编辑，与勾选永不冲突。
-   因 .ql-ui 设 pointer-events:none，elementFromPoint 会落在 li 上，再用 .ql-ui 真实矩形判定命中。 */
-function _memoTodoHitLi(x, y) {
-  if (!memoQuill || !memoQuill.root) return null;
-  const el = document.elementFromPoint(x, y);
-  if (!el) return null;
-  const li = el.closest && el.closest('li[data-list="unchecked"], li[data-list="checked"]');
-  if (!li) return null;
-  const ui = li.querySelector && li.querySelector(':scope > .ql-ui');
-  if (!ui) return null;
-  const r = ui.getBoundingClientRect();
-  const lr = li.getBoundingClientRect();
-  const pad = 14;   // 手指容差
-  const textStart = lr.left + parseFloat(getComputedStyle(li).paddingLeft || '0');   // 第一个字起始 x（硬边界）
-  if (x >= r.left - pad && x < textStart - 2 && y >= r.top - pad && y <= r.bottom + pad) return li;
-  return null;
-}
-function memoEditorHandleTodoTap(x, y) {
-  const li = _memoTodoHitLi(x, y);
-  if (!li) return false;
-  const now = Date.now();
-  if (_memoTodoLastLi === li && now - _memoTodoLastMs < 600) return true;   // 去重：同一行 touchend+click 仅切一次，不挡不同行
-  _memoTodoLastLi = li; _memoTodoLastMs = now;
-  let idx = 0, found = false;
-  const lines = memoQuill.getLines();
-  for (const line of lines) { if (line.domNode === li) { found = true; break; } idx += line.length(); }
-  if (!found) return false;
-  const next = li.getAttribute('data-list') === 'checked' ? 'unchecked' : 'checked';
-  memoQuill.formatLine(idx, 1, 'list', next, Quill.sources.USER);   // → text-change 自动存盘
-  return true;
-}
+/* [v164] 待办勾选交回 Quill 原生，自写委托与触摸拦截已移除 */
 
 async function handleClick(e) {
-  if (memoEditorHandleTodoTap(e.clientX, e.clientY)) { e.preventDefault(); return; }
   const t = e.target.closest('[data-action]');
   if (!t) return;
   const a = t.dataset.action;
@@ -2980,8 +2970,9 @@ async function handleClick(e) {
         const r = getRecipe(id);
         if (r) {
           state.recipes = state.recipes.filter(x => x.id !== id);
+          state.recipeTrash.unshift(Object.assign({}, r, { deletedAt: Date.now() }));
           save(); closeModal(); renderLibrary();
-          toast('已删除菜谱「' + (r.name || '未命名') + '」');
+          toast('已移入回收站「' + (r.name || '未命名') + '」（' + TRASH_TTL_DAYS + '天内可恢复）');
         }
       } else if (kind === 'fav') {
         const c = state.collections.find(x => x.id === id);
@@ -2992,6 +2983,13 @@ async function handleClick(e) {
         }
       }
       break;
+    }
+    case 'recipe-trash-view': openRecipeTrashView(t.dataset.id); break;
+    case 'recipe-trash-restore': restoreRecipeFromTrash(t.dataset.id); break;
+    case 'recipe-trash-del': deleteRecipeFromTrash(t.dataset.id); break;
+    case 'recipe-trash-del-confirm': {
+      state.recipeTrash = state.recipeTrash.filter(x => x.id !== t.dataset.id);
+      save(); closeModal(); renderRecipeTrash(); break;
     }
     case 'save': saveEditor(); break;
     case 'cancel': cancelEditor(); break;
@@ -3445,14 +3443,25 @@ async function handleClick(e) {
     }
     case 'memo-del': {
       const id = t.dataset.id;
-      openModal('<div class="modal-mask" data-action="modal-close"><div class="modal-panel"><div class="modal-head">删除笔记<span class="modal-close" data-action="modal-close">×</span></div><div class="modal-body"><p>确定删除这条笔记吗？此操作不可恢复。</p><div class="memo-modal-actions"><button class="btn ghost" data-action="modal-close">取消</button><button class="btn memo-danger" data-action="memo-del-confirm" data-id="' + escAttr(id) + '">删除</button></div></div></div></div>');
+      openModal('<div class="modal-mask" data-action="modal-close"><div class="modal-panel"><div class="modal-head">删除笔记<span class="modal-close" data-action="modal-close">×</span></div><div class="modal-body"><p>确定删除这条笔记吗？将移入回收站，' + TRASH_TTL_DAYS + ' 天内可恢复。</p><div class="memo-modal-actions"><button class="btn ghost" data-action="modal-close">取消</button><button class="btn memo-danger" data-action="memo-del-confirm" data-id="' + escAttr(id) + '">删除</button></div></div></div></div>');
       break;
     }
     case 'memo-del-confirm': {
       const id = t.dataset.id;
-      state.memoNotes = state.memoNotes.filter(n => n.id !== id);
+      const n = state.memoNotes.find(x => x.id === id);
+      if (n) {
+        state.memoNotes = state.memoNotes.filter(x => x.id !== id);
+        state.memoTrash.unshift(Object.assign({}, n, { deletedAt: Date.now() }));
+      }
       if (state.memoEditId === id) state.memoEditId = null;
       save(); closeModal(); renderMemoList(); break;
+    }
+    case 'memo-trash-view': openMemoTrashView(t.dataset.id); break;
+    case 'memo-trash-restore': restoreMemoFromTrash(t.dataset.id); break;
+    case 'memo-trash-del': deleteMemoFromTrash(t.dataset.id); break;
+    case 'memo-trash-del-confirm': {
+      state.memoTrash = state.memoTrash.filter(x => x.id !== t.dataset.id);
+      save(); closeModal(); renderMemoTrash(); break;
     }
     case 'memo-tag': { state.memoTag = t.dataset.tag; state.memoFavView = false; state.memoSub = ''; renderMemoList(); break; }
     case 'memo-search-clear': { state.memoSearch = ''; renderMemoList(); break; }
@@ -3644,6 +3653,12 @@ function handleKeydown(e) {
     save(); renderMemoSchedule();
   }
 }
+/* [v165] 菜谱编辑器多行文本框自动增高：高度随内容撑开、禁用滑块、超宽自动换行 */
+function autoGrowTextarea(el) {
+  if (!el || el.tagName !== 'TEXTAREA') return;
+  el.style.height = 'auto';
+  el.style.height = el.scrollHeight + 'px';
+}
 function handleInput(e) {
   const t = e.target;
   if (t.dataset.action && SEARCH_ACTIONS.includes(t.dataset.action)) {
@@ -3667,7 +3682,8 @@ function handleInput(e) {
   if (t.classList.contains('rname')) { const b = findBlock(t.dataset.sec, t.dataset.bid); if (b) { b.name = t.value; syncText(b); } return; }
   if (t.classList.contains('ramount')) { const b = findBlock(t.dataset.sec, t.dataset.bid); if (b) { b.amount = t.value === '' ? null : parseFloat(t.value); syncText(b); } return; }
   if (t.classList.contains('runit')) { const b = findBlock(t.dataset.sec, t.dataset.bid); if (b) { b.unit = t.value; syncText(b); } return; }
-  if (t.classList.contains('rnote') || t.classList.contains('rsteptext')) { const b = findBlock(t.dataset.sec, t.dataset.bid); if (b) b.text = t.value; return; }
+  if (t.classList.contains('batch-input') && t.closest('.editor')) { autoGrowTextarea(t); return; }
+  if (t.classList.contains('rnote') || t.classList.contains('rsteptext')) { const b = findBlock(t.dataset.sec, t.dataset.bid); if (b) b.text = t.value; autoGrowTextarea(t); return; }
   if (t.classList.contains('pname')) { const r = getProw(t.dataset.col, t.dataset.id); if (r) r.name = t.value; return; }
   if (t.classList.contains('pqty')) { const r = getProw(t.dataset.col, t.dataset.id); if (r) r.qty = t.value === '' ? null : parseFloat(t.value); return; }
   if (t.classList.contains('punit')) { const r = getProw(t.dataset.col, t.dataset.id); if (r) r.unit = t.value; return; }
@@ -4032,7 +4048,7 @@ function memoVisibleNotes() {
 /* 卡片正文：把存储用的 .memo-checklist 结构转成 Quill 原生 data-list 结构，
    并补上 Quill 的 .ql-ui 占位（Quill 全局 CSS 会自动画出 ☐/☑），与编辑器完全一致；
    同时给每条待办 li 加上 data-action/data-id，便于在卡片上直接打勾并实时保存 */
-function memoCardBodyHtml(n) {
+function memoCardBodyHtml(n, interactive) {
   const div = document.createElement('div');
   div.innerHTML = memoStorageToQuill(n.body || '');
   /* 给每个列表行补 Quill 同款 .ql-ui（编辑器里 Quill 自动注入；卡片是静态 HTML 需手动补），
@@ -4044,7 +4060,7 @@ function memoCardBodyHtml(n) {
       ui.className = 'ql-ui';
       li.insertBefore(ui, li.firstChild);
     }
-    if (li.getAttribute('data-list') === 'checked' || li.getAttribute('data-list') === 'unchecked') {
+    if (interactive !== false && (li.getAttribute('data-list') === 'checked' || li.getAttribute('data-list') === 'unchecked')) {
       li.setAttribute('data-action', 'memo-card-cb');
       li.setAttribute('data-id', n.id);
     }
@@ -4939,24 +4955,7 @@ function renderMemoEditor() {
     const next = dx > 0 ? cur + 1 : cur - 1;
     memoQuill.format('indent', next > 0 ? next : false);
   }, { passive: true });
-  /* [v161] 触摸拦截：抢在 iOS 处理前动手。contenteditable 内一次触摸会被系统当成「弹键盘/选字」而盖掉我们的勾选；
-     故在 touchstart 命中方框槽（左侧约 1.2em）或点中方框本体时立即 preventDefault 拦下系统默认（不再聚焦/选字），再于 touchend（非滑动）时执行勾选。
-     桌面端走全局 handleClick 的 click 委托，不受此影响。 */
-  const _er = memoQuill ? memoQuill.root : null;
-  if (_er) {
-    let _teSX = 0, _teSY = 0;
-    _er.addEventListener('touchstart', (e) => {
-      if (e.touches.length === 1) { _teSX = e.touches[0].clientX; _teSY = e.touches[0].clientY; }
-      // 命中勾选区 → 立即拦下 iOS 的聚焦/选字，抢在系统之前（解决「单击不动 / 已弹键盘后全失效」）
-      if (e.cancelable && _memoTodoHitLi(_teSX, _teSY)) e.preventDefault();
-    }, { passive: false });
-    _er.addEventListener('touchend', (e) => {
-      const tch = e.changedTouches && e.changedTouches[0];
-      if (!tch) return;
-      if (Math.abs(tch.clientX - _teSX) + Math.abs(tch.clientY - _teSY) > 12) return;   // 视为滑动/滚动
-      if (memoEditorHandleTodoTap(tch.clientX, tch.clientY)) e.preventDefault();
-    }, { passive: false });
-  }
+  /* [v164] 待办勾选交回 Quill 原生：移除自写触摸拦截与点击委托（方框点击由 Quill 处理） */
   const titleEl = $('memoTitle'), catEl = $('memoCat'), subEl = $('memoSub');
   titleEl.addEventListener('input', () => { n.title = titleEl.value; memoDirty = true; save(); });
   catEl.addEventListener('input', () => { n.cat = catEl.value.trim(); memoDirty = true; save(); });
@@ -5296,4 +5295,133 @@ function memoChatSend() {
   state.memoChat.push({ id: uid(), type: 'text', text: v, img: '', createdAt: Date.now() });
   ti.value = ''; save(); renderMemoChat(); memoChatScrollToEnd();
   const nt = $('memoChatText'); if (nt) nt.focus();
+}
+
+
+/* ================= 回收站（菜谱 / 备忘录，30 天自动清空） ================= */
+const TRASH_TTL_DAYS = 30;
+const TRASH_TTL_MS = TRASH_TTL_DAYS * 24 * 60 * 60 * 1000;
+
+/* 剩余天数（>=1；<=0 视为今天到期） */
+function trashRemainingDays(deletedAt) {
+  if (!deletedAt) return TRASH_TTL_DAYS;
+  const left = (deletedAt + TRASH_TTL_MS) - Date.now();
+  if (left <= 0) return 0;
+  return Math.max(1, Math.ceil(left / (24 * 60 * 60 * 1000)));
+}
+/* 清掉超过 30 天的记录；返回是否真有清理 */
+function purgeExpiredTrash() {
+  const cutoff = Date.now() - TRASH_TTL_MS;
+  const beforeR = state.recipeTrash.length, beforeM = state.memoTrash.length;
+  state.recipeTrash = state.recipeTrash.filter(x => (x.deletedAt || 0) > cutoff);
+  state.memoTrash = state.memoTrash.filter(x => (x.deletedAt || 0) > cutoff);
+  return (state.recipeTrash.length !== beforeR) || (state.memoTrash.length !== beforeM);
+}
+function trashMetaLine(deletedAt) {
+  const d = deletedAt ? new Date(deletedAt) : null;
+  const ds = d ? (d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')) : '未知';
+  const days = trashRemainingDays(deletedAt);
+  const left = days <= 0 ? '今天到期' : ('剩 ' + days + ' 天');
+  return '删除于 ' + ds + ' · ' + left;
+}
+
+/* ---- 菜谱回收站 ---- */
+function renderRecipeTrash() {
+  if (purgeExpiredTrash()) save();
+  setChrome('菜谱库 / 回收站',
+    `<button class="btn" data-action="back-library">← 返回</button>`);
+  const list = state.recipeTrash;
+  const content = $('content');
+  if (!list.length) {
+    content.innerHTML = `<div class="empty"><div class="big">🗑️</div>回收站是空的<br><span class="sub">被删除的菜谱会在这里保留 ${TRASH_TTL_DAYS} 天，期间可恢复</span></div>`;
+    return;
+  }
+  content.innerHTML = `
+    <div class="trash-note">被删除的菜谱会保留 ${TRASH_TTL_DAYS} 天，到期后自动清空；期间可点开查看 / 还原 / 彻底删除。</div>
+    <div class="trash-list">
+      ${list.map(r => `
+        <div class="trash-item" data-action="recipe-trash-view" data-id="${escAttr(r.id)}">
+          <div class="trash-info">
+            <div class="trash-name">${escHtml(r.name || '未命名菜谱')}</div>
+            <div class="trash-meta">${escHtml(trashMetaLine(r.deletedAt))}</div>
+          </div>
+          <div class="trash-actions">
+            <button class="btn sm" data-action="recipe-trash-restore" data-id="${escAttr(r.id)}">↩ 还原</button>
+            <button class="btn sm danger" data-action="recipe-trash-del" data-id="${escAttr(r.id)}">🗑 删除</button>
+          </div>
+        </div>`).join('')}
+    </div>`;
+}
+/* 只读查看（复用与「查看页」完全一致的展示函数，仅去掉编辑/份量控件） */
+function openRecipeTrashView(id) {
+  const r = state.recipeTrash.find(x => x.id === id);
+  if (!r) { toast('该记录已不在回收站'); renderRecipeTrash(); return; }
+  const cover = r.cover ? `<div class="view-cover" style="background-image:url('${r.cover}')"></div>` : '';
+  const tags = r.categories.map(t => `<span class="mini-tag">${escHtml(t)}</span>`).join('') +
+    r.cookings.map(t => `<span class="mini-tag cook">${escHtml(t)}</span>`).join('');
+  const f = scaleFactorOf(r);
+  openModal(`<div class="modal-mask" data-action="modal-close"><div class="modal-panel trash-view"><div class="modal-head">查看（回收站·只读）<span class="modal-close" data-action="modal-close">×</span></div><div class="modal-body"><div class="view">${cover}<div class="view-head"><h1>${escHtml(r.name) || '未命名菜谱'}</h1><div class="tagrow">${tags}</div>${r.videoUrl ? `<a class="view-video" href="${escAttr(r.videoUrl)}" target="_blank" rel="noopener">🔗 来源视频</a>` : ''}</div><div class="view-sec"><h3>食材</h3>${viewListHTML(r.sections.ingredients, true, f)}</div><div class="view-sec"><h3>调味料</h3>${viewListHTML(r.sections.seasonings, true, f)}</div><div class="view-sec"><h3>备菜</h3>${viewPrepHTML(r, f)}</div><div class="view-sec"><h3>烹饪步骤</h3>${viewListHTML(r.sections.steps, false)}</div></div></div></div></div>`);
+}
+function restoreRecipeFromTrash(id) {
+  const i = state.recipeTrash.findIndex(x => x.id === id);
+  if (i < 0) { toast('该记录已不在回收站'); return; }
+  const item = state.recipeTrash[i];
+  delete item.deletedAt;
+  state.recipeTrash.splice(i, 1);
+  state.recipes.unshift(item);
+  save(); renderRecipeTrash(); toast('已还原菜谱「' + (item.name || '未命名') + '」');
+}
+function deleteRecipeFromTrash(id) {
+  const r = state.recipeTrash.find(x => x.id === id);
+  if (!r) return;
+  openModal(`<div class="modal-mask" data-action="modal-close"><div class="modal-panel"><div class="modal-head">彻底删除<span class="modal-close" data-action="modal-close">×</span></div><div class="modal-body"><p>确定要彻底删除菜谱「${escHtml(r.name || '未命名')}」吗？此操作不可恢复。</p><div class="memo-modal-actions"><button class="btn ghost" data-action="modal-close">取消</button><button class="btn danger" data-action="recipe-trash-del-confirm" data-id="${escAttr(id)}">彻底删除</button></div></div></div></div>`);
+}
+
+/* ---- 备忘录回收站 ---- */
+function renderMemoTrash() {
+  if (purgeExpiredTrash()) save();
+  setChrome('备忘录 / 回收站',
+    `<button class="btn" data-action="memo">← 返回</button>`);
+  const list = state.memoTrash;
+  const content = $('content');
+  if (!list.length) {
+    content.innerHTML = `<div class="empty"><div class="big">🗑️</div>回收站是空的<br><span class="sub">被删除的笔记会在这里保留 ${TRASH_TTL_DAYS} 天，期间可恢复</span></div>`;
+    return;
+  }
+  content.innerHTML = `
+    <div class="trash-note">被删除的笔记会保留 ${TRASH_TTL_DAYS} 天，到期后自动清空；期间可点开查看 / 还原 / 彻底删除。</div>
+    <div class="trash-list">
+      ${list.map(n => `
+        <div class="trash-item" data-action="memo-trash-view" data-id="${escAttr(n.id)}">
+          <div class="trash-info">
+            <div class="trash-name">${escHtml(n.title || '未命名笔记')}</div>
+            <div class="trash-meta">${escHtml(trashMetaLine(n.deletedAt))}</div>
+          </div>
+          <div class="trash-actions">
+            <button class="btn sm" data-action="memo-trash-restore" data-id="${escAttr(n.id)}">↩ 还原</button>
+            <button class="btn sm danger" data-action="memo-trash-del" data-id="${escAttr(n.id)}">🗑 删除</button>
+          </div>
+        </div>`).join('')}
+    </div>`;
+}
+/* 只读查看（复用卡片正文渲染，去掉待办勾选交互） */
+function openMemoTrashView(id) {
+  const n = state.memoTrash.find(x => x.id === id);
+  if (!n) { toast('该记录已不在回收站'); renderMemoTrash(); return; }
+  const foot = n.updatedAt ? '<div class="memo-card-foot"><span class="memo-time">' + memoFmtTime(n.updatedAt) + '</span></div>' : '';
+  openModal(`<div class="modal-mask" data-action="modal-close"><div class="modal-panel trash-view"><div class="modal-head">查看（回收站·只读）<span class="modal-close" data-action="modal-close">×</span></div><div class="modal-body"><div class="memo-card-readonly"><div class="memo-card-top"><div class="memo-card-title">${escHtml(n.title || '未命名笔记')}</div></div><div class="memo-card-body ql-editor">${memoCardBodyHtml(n, false)}</div>${foot}</div></div></div></div></div>`);
+}
+function restoreMemoFromTrash(id) {
+  const i = state.memoTrash.findIndex(x => x.id === id);
+  if (i < 0) { toast('该记录已不在回收站'); return; }
+  const item = state.memoTrash[i];
+  delete item.deletedAt;
+  state.memoTrash.splice(i, 1);
+  state.memoNotes.unshift(item);
+  save(); renderMemoTrash(); toast('已还原笔记「' + (item.title || '未命名') + '」');
+}
+function deleteMemoFromTrash(id) {
+  const n = state.memoTrash.find(x => x.id === id);
+  if (!n) return;
+  openModal(`<div class="modal-mask" data-action="modal-close"><div class="modal-panel"><div class="modal-head">彻底删除<span class="modal-close" data-action="modal-close">×</span></div><div class="modal-body"><p>确定要彻底删除笔记「${escHtml(n.title || '未命名笔记')}2」吗？此操作不可恢复。</p><div class="memo-modal-actions"><button class="btn ghost" data-action="modal-close">取消</button><button class="btn danger" data-action="memo-trash-del-confirm" data-id="${escAttr(id)}2">彻底删除</button></div></div></div></div>`);
 }
