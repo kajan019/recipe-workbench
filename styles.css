@@ -1586,6 +1586,17 @@ body:has(.memo-chat) .topbar { position: sticky; top: 0; z-index: 20; }
 .ql-editor li[data-list="checked"] > .ql-ui:before { content: '\2611\FE0E'; }
 .ql-editor li[data-list="unchecked"] > .ql-ui:before { content: '\2610\FE0E'; }
 
+/* iOS Safari 修复：待办勾选框是 contenteditable=false 的小控件，会继承 .memo-body 的 user-select:text，
+   被 iOS 误当成「可选取文字」→ 必须长按才弹选择菜单、click 才触发，勾选框点不动。
+   仅对勾选框关掉文字选中/长按菜单/触摸延迟，让它像普通控件一样「轻点即翻转」；
+   正文仍是 user-select:text，可正常选中复制；不动 Quill 原生勾选逻辑（守 v164 红线）。 */
+.ql-editor li > .ql-ui {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
+}
+
 /* 列表标记自定义（用户指定 · 覆盖 Quill 原生，编辑器与卡片共用同一套 .ql-editor 渲染） */
 /* 无序列表：一级 ■ 二级 ○ 三级 ♦ 四级 ♢ */
 .ql-editor li[data-list=bullet] > .ql-ui:before { content: '\25A0'; }

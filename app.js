@@ -708,7 +708,7 @@ function seed() {
 
   state.recipes = [r1, r2];
   state.nutfoods = NUT_SEED.map(f => Object.assign(blankNutFood(), f));
-  save();
+  _suppressSync = true; save(); _suppressSync = false;   // 种子数据仅落本地，绝不回写云端覆盖真数据
 }
 
 const getRecipe = (id) => state.recipes.find(r => r.id === id);
@@ -3939,12 +3939,10 @@ function init() {
   document.addEventListener('keydown', handleKeydown);
   document.addEventListener('change', handleChange);
   initDrag();
-  // 同步状态点：已配置则亮起，自动模式启动即拉取云端（手机/电脑拿同一份）
+  // 同步状态点：只要配了云端就启动自动拉取（不再看「自动同步」勾选），重开即拿云端真数据
   if (syncEnabled()) {
-    updateSyncDot(getSyncCfg().auto ? 'busy' : 'on');
-    if (getSyncCfg().auto) {
-      githubPull().catch(e => { updateSyncDot('err'); console.warn('启动拉取失败', e); });
-    }
+    updateSyncDot('busy');
+    githubPull().catch(e => { updateSyncDot('err'); console.warn('启动拉取失败', e); });
   }
   render();
 }
