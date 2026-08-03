@@ -540,7 +540,8 @@ function save() {
 
 /* ---------------- GitHub 同步（私有库当数据库，实现跨设备 + 永久保存） ----------------
  * 本地 localStorage 仍是工作副本（秒开）；GitHub 私有库的 data.json 是云端镜像。
- * 每次 save() 防抖自动上传；启动时自动拉取 → 手机 / 电脑拿到同一份数据。 */
+ * 自动上传已按要求关闭（即使勾了「自动同步」也不自动传）；改动需手动点「☁ 上传到云端」或「保存设置」才上传。
+ * 启动时仍自动从云端拉取 → 手机 / 电脑拿到同一份数据。 */
 const SYNC_CFG_KEY = 'wb_recipe_sync_cfg_v1';
 let _syncTimer = null, _suppressSync = false;
 function getSyncCfg() { try { return JSON.parse(localStorage.getItem(SYNC_CFG_KEY)) || null; } catch (_) { return null; } }
@@ -631,14 +632,9 @@ async function githubPull() {
   return 0;
 }
 
-/* 防抖自动上传（在 save() 末尾调用） */
-function scheduleSync() {
-  if (_suppressSync) return;
-  const cfg = getSyncCfg();
-  if (!cfg || !cfg.auto || !cfg.token || !cfg.repo) return;
-  clearTimeout(_syncTimer);
-  _syncTimer = setTimeout(() => { githubPush().catch(e => console.warn('自动同步失败', e)); }, 1200);
-}
+/* 自动上传已按要求关闭：任何改动都不会自动传到云端（即使勾了「自动同步」也不自动传）。
+ * 如需上传，请手动点同步弹窗里的「☁ 上传到云端」或「保存设置」。 */
+function scheduleSync() { /* no-op：自动上传已关闭 */ }
 
 /* 同步设置弹窗 */
 function openSyncModal() {
@@ -661,12 +657,13 @@ function openSyncModal() {
             <div class="field"><div class="field-label">分支</div><input class="input" id="syncBranch" placeholder="main" value="${escAttr(c.branch || 'main')}"></div>
             <div class="field"><div class="field-label">文件路径</div><input class="input" id="syncPath" placeholder="data.json" value="${escAttr(c.path || 'data.json')}"></div>
           </div>
-          <label class="chk"><input type="checkbox" id="syncAuto" ${c.auto ? 'checked' : ''}> 自动同步（每次改动后上传；启动时从云端拉取）</label>
+          <label class="chk"><input type="checkbox" id="syncAuto" ${c.auto ? 'checked' : ''}> 自动上传已关闭：改动不会自动传云端，请手动点「☁ 上传到云端」；打开工作台仍会自动从云端拉取</label>
           <div class="sync-status" id="syncStatus"></div>
         </div>
         <div class="modal-actions">
           <button class="btn" data-action="sync-test">测试连接</button>
           <button class="btn" data-action="sync-pull">从云端拉取</button>
+          <button class="btn" data-action="sync-push">☁ 上传到云端</button>
           <button class="btn primary" data-action="sync-save">保存设置</button>
         </div>
       </div>
@@ -3021,6 +3018,11 @@ async function handleClick(e) {
     case 'sync-pull':
       closeModal();
       githubPull().then(() => toast('已拉取云端（整份覆盖本地）')).catch(e => toast('拉取失败：' + e.message));
+      break;
+    case 'sync-push':
+      closeModal();
+      updateSyncDot('busy');
+      githubPush().then(() => { updateSyncDot('ok'); toast('已上传到云端'); }).catch(e => { updateSyncDot('err'); toast('上传失败：' + e.message); });
       break;
     case 'sync-save': {
       const cfg = {
