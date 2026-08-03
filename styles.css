@@ -1281,7 +1281,7 @@ body {
 .memo-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; cursor: pointer; transition: border-color .15s; }
 .memo-card:hover { border-color: #a78bfa; }
 .memo-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.memo-card-title { font-size: 15px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.memo-card-title { font-size: 15px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1 1 auto; }
 .memo-card-del { border: none; background: transparent; color: var(--text-3); cursor: pointer; font-size: 15px; padding: 2px 6px; border-radius: 6px; }
 .memo-card-del:hover { background: #fee2e2; color: #e11d48; }
 .memo-card-snippet { font-size: 13px; color: var(--text-2); margin: 6px 0; line-height: 1.5; max-height: 3em; overflow: hidden; }
@@ -1302,7 +1302,10 @@ body {
 /* 手机端拖拽手柄：仅触摸设备显示（桌面仍可用整卡拖动，见 attachMemoSortable）；展开态不可拖，手柄隐藏 */
 .memo-card-grip { display: none; }
 @media (hover: none) and (pointer: coarse) {
-  .memo-card { display: flex; align-items: stretch; gap: 8px; }
+  /* 仅非展开态用横向 flex（左侧拖拽手柄 + 右侧卡片内容）；展开预览态恢复纵向堆叠，
+     否则手柄布局的 flex 会把正文/复制栏也横排，导致手机端「元素乱飞」 */
+  .memo-card:not(.expanded) { display: flex; align-items: stretch; gap: 8px; }
+  .memo-card.expanded { display: block; }
   .memo-card-grip {
     display: flex; align-items: center; justify-content: center;
     flex: 0 0 auto; width: 22px;
@@ -1314,7 +1317,7 @@ body {
   .memo-card-main { flex: 1; min-width: 0; }
 }
 .memo-card.expanded .memo-card-grip { display: none; }
-.memo-card-actions { display: flex; align-items: center; gap: 4px; }
+.memo-card-actions { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; white-space: nowrap; }
 .memo-star, .memo-card-edit { border: none; background: transparent; cursor: pointer; font-size: 15px; padding: 2px 6px; border-radius: 6px; color: var(--text-3); }
 .memo-star:hover { background: #fef3c7; }
 .memo-star.on { color: #f5b301; }
@@ -1483,10 +1486,6 @@ body:has(.memo-chat) .topbar { position: sticky; top: 0; z-index: 20; }
   .memo-cols.tags-hidden .memo-tags { display: none; }
   .memo-notes { max-height: none; }
   .memo-tags-row { flex-direction: column; }
-
-  /* 我的备忘录 · 卡片模板化对齐：标题截断、操作按钮固定右侧不被挤压，跨卡片对齐 */
-  .memo-card-title { min-width: 0; flex: 1 1 auto; }
-  .memo-card-actions { flex: 0 0 auto; white-space: nowrap; }
 
   /* 速记顶部搜索栏：窄屏整页由 window 滚动（.app 改 height:auto / .content overflow:visible，列表无法内部滚动），
      故改用 sticky 贴顶栏正下方吸顶；桌面端仍是弹性列内部滚动、搜索栏天然固定，不在此改，避免破坏已修好的宽屏 */
