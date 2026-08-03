@@ -4921,13 +4921,23 @@ function renderMemoEditor() {
     memoQuill.format('indent', next > 0 ? next : false);
   }, { passive: true });
   /* 第7项：手机端在编辑器内点待办框直接打勾。触摸点按会被浏览器当成"放光标/弹键盘"，
-     导致勾选框点不动；这里在触摸时拦截并调用 memoToggleEditorTodo 切换，桌面端仍走 Quill 原生。 */
+     导致勾选框点不动；这里在触摸时拦截并调用 memoToggleEditorTodo 切换，桌面端仍走 Quill 原生。
+     命中判定改用「待办行左侧勾选槽」几何检测，而非精确命中 .ql-ui：
+     Quill 的 .ql-ui 为绝对定位、可见对勾还向左偏 1.5em（margin-left:-1.5em），
+     小屏手指极难点中，表现为「点几次才中」。改为取 .ql-ui 实际盒模型 + 容差，
+     落在其左侧勾选槽内即视为点勾选框，点正文区则照常放光标编辑。 */
   let _memoCbLi = null;
   _ed.addEventListener('touchstart', (e) => {
-    const ui = e.target.closest ? e.target.closest('.ql-ui') : null;
-    if (!ui) return;
-    const li = ui.closest('li[data-list="checked"], li[data-list="unchecked"]');
+    if (e.touches.length !== 1) return;
+    const li = e.target.closest ? e.target.closest('li[data-list="checked"], li[data-list="unchecked"]') : null;
     if (!li) return;
+    const ui = li.querySelector('.ql-ui');
+    if (!ui) return;
+    const ur = ui.getBoundingClientRect();
+    const tr = li.getBoundingClientRect();
+    const tx = e.touches[0].clientX, ty = e.touches[0].clientY;
+    const PAD = 16; // 勾选框偏小且可见对勾向左偏，留出手指容差
+    if (tx < ur.left - PAD || tx > ur.right + PAD || ty < tr.top || ty > tr.bottom) return; // 点正文区则放行（编辑）
     _memoCbLi = li;
     if (e.cancelable) e.preventDefault();   // 阻止放光标/弹键盘/合成鼠标（避免与桌面 mousedown 重复切换）
   }, { passive: false });
