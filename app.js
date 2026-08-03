@@ -462,7 +462,9 @@ function load() {
       return;
     }
   } catch (e) { console.warn('读取本地数据失败', e); }
-  seed();
+  // 本地无数据：已配云端同步时先不打演示，留给启动拉取决定（避免演示先进内存被误上传覆盖云端真数据）
+  if (syncEnabled()) { state._pendingSeed = true; }
+  else { seed(); }
 }
 function migrateRecipe(r) {
   if (r.scaleBase === undefined) r.scaleBase = null;
@@ -560,6 +562,12 @@ async function githubApi(path, opts) {
 /* 上传当前数据到 data.json（处理 SHA / 新建 / 409 冲突重试） */
 async function githubPush() {
   if (!syncEnabled()) return false;
+  // 安全护栏①：本会话尚未完成云端拉取（云端可能还存着真数据），禁止先把演示/本地半成品传上去覆盖
+  if (state._pendingSeed) { toast('云端同步进行中，请稍候再上传'); return false; }
+  // 安全护栏②：当前全部为演示菜谱且本会话未成功从云端拉到真数据时，禁止上传，避免误覆盖云端记录
+  if (!state._pulledFromCloud && state.recipes.length && state.recipes.every(r => r._seed)) {
+    toast('当前仅为演示菜谱，已停止上传以免覆盖云端记录'); return false;
+  }
   const cfg = getSyncCfg();
   const payload = JSON.stringify({ recipes: state.recipes, collections: state.collections, nutfoods: state.nutfoods, nutRecords: state.nutRecords, memoNotes: state.memoNotes, memoChat: state.memoChat, memoScheduleDate: state.memoScheduleDate, memoScheduleTasks: state.memoScheduleTasks, recipeTrash: state.recipeTrash, memoTrash: state.memoTrash });
   const apiPath = '/contents/' + syncPath(cfg) + '?ref=' + syncBranch(cfg);
@@ -616,6 +624,7 @@ async function githubPull() {
   state.memoTrash = Array.isArray(data.memoTrash) ? data.memoTrash : [];
   state.memoScheduleDate = (data.memoScheduleDate && /^\d{4}-\d{2}-\d{2}$/.test(data.memoScheduleDate)) ? data.memoScheduleDate : fmtDate(Date.now());
   state.memoScheduleTasks = Array.isArray(data.memoScheduleTasks) ? data.memoScheduleTasks : [];
+  state._pulledFromCloud = true;   // 标记本会话已成功从云端拉到数据（供上传护栏判断）
   _suppressSync = true; save(); _suppressSync = false;   // 拉取期间抑制自动上传，避免回写
   render();
   updateSyncDot('ok');
@@ -706,6 +715,7 @@ function seed() {
     Object.assign({ id: uid(), kind: 'item', text: '加水煮开倒入蛋液', images: [] }),
   ];
 
+  r1._seed = r2._seed = true;   // 隐性标记：演示菜谱，供上传护栏识别
   state.recipes = [r1, r2];
   state.nutfoods = NUT_SEED.map(f => Object.assign(blankNutFood(), f));
   _suppressSync = true; save(); _suppressSync = false;   // 种子数据仅落本地，绝不回写云端覆盖真数据
@@ -3942,7 +3952,14 @@ function init() {
   // 同步状态点：只要配了云端就启动自动拉取（不再看「自动同步」勾选），重开即拿云端真数据
   if (syncEnabled()) {
     updateSyncDot('busy');
-    githubPull().catch(e => { updateSyncDot('err'); console.warn('启动拉取失败', e); });
+    githubPull()
+      .then(() => { updateSyncDot('on'); })
+      .catch(e => { updateSyncDot('err'); console.warn('启动拉取失败', e); })
+      .finally(() => {
+        // 拉取结束后，仅当本会话尚未落盘且云端仍为空，才兜底演示；随后解除「待拉取」标记
+        if (state._pendingSeed && state.recipes.length === 0) seed();
+        state._pendingSeed = false;
+      });
   }
   render();
 }
