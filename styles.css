@@ -1315,7 +1315,9 @@ body {
   }
   .memo-card-grip:active { cursor: grabbing; }
   .memo-card-main { flex: 1; min-width: 0; }
-  /* [v162] 不再屏蔽 .ql-ui 点击：方框恢复为可点目标，勾选交由 app.js 的 touchstart/click 委托处理（仅限方框槽，不侵占正文编辑） */
+  /* [v163] 屏蔽 .ql-ui 原生点击：勾选交由 app.js 委托处理（用 .ql-ui 真实矩形判定命中，不靠 e.target），
+     同时阻止 Quill 桌面端原生勾选与我们的委托在桌面端相互抵消（pointer-events:none 让原生点不到方框）。 */
+  .ql-editor li > .ql-ui { pointer-events: none; }
 }
 .memo-card.expanded .memo-card-grip { display: none; }
 .memo-card-actions { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; white-space: nowrap; }

@@ -2858,15 +2858,29 @@ function openNutFoodModal(id, name) {
 /* [v155] 编辑器内待办框手机端点击切换：与卡片预览同款 click 委托，并加 touchend 兜底（个别机型 contenteditable 内 click 不触发）。
    经 jsdom 实测：用 memoQuill.getLines() 逐行累加定位 li（li0→0, li1→3），再 formatLine 切 checked/unchecked → 触发 text-change 自动存盘。 */
 let _memoTodoLastLi = null, _memoTodoLastMs = 0;
-function memoEditorHandleTodoTap(clientX, target) {
-  if (!memoQuill || !memoQuill.root) return false;
-  if (!memoQuill.root.contains(target)) return false;
-  const li = target.closest && target.closest('li[data-list="unchecked"], li[data-list="checked"]');
+/* [v163] 用浏览器真实渲染几何判定勾选区，不再猜坐标偏移。
+   document.elementFromPoint 取实际命中的元素 → 其所在待办行 li；
+   再量该行 .ql-ui（方框）的真实矩形，勾选区 = 方框左侧(含手指容差) 到 「第一个字起始 x - 2px」为止。
+   第一个字起始 x = li.left + padding-left，作为硬边界：点到文字及之后一律放行编辑，与勾选永不冲突。
+   因 .ql-ui 设 pointer-events:none，elementFromPoint 会落在 li 上，再用 .ql-ui 真实矩形判定命中。 */
+function _memoTodoHitLi(x, y) {
+  if (!memoQuill || !memoQuill.root) return null;
+  const el = document.elementFromPoint(x, y);
+  if (!el) return null;
+  const li = el.closest && el.closest('li[data-list="unchecked"], li[data-list="checked"]');
+  if (!li) return null;
+  const ui = li.querySelector && li.querySelector(':scope > .ql-ui');
+  if (!ui) return null;
+  const r = ui.getBoundingClientRect();
+  const lr = li.getBoundingClientRect();
+  const pad = 14;   // 手指容差
+  const textStart = lr.left + parseFloat(getComputedStyle(li).paddingLeft || '0');   // 第一个字起始 x（硬边界）
+  if (x >= r.left - pad && x < textStart - 2 && y >= r.top - pad && y <= r.bottom + pad) return li;
+  return null;
+}
+function memoEditorHandleTodoTap(x, y) {
+  const li = _memoTodoHitLi(x, y);
   if (!li) return false;
-  const onBox = target.closest && target.closest('.ql-ui');   // 点中方框本体必勾（不依赖坐标，防几何错位）
-  const rect = li.getBoundingClientRect();
-  const slot = parseFloat(getComputedStyle(li).fontSize) * 1.2;   // 勾选槽≈方框宽(1.2em)，不延伸到第一个字
-  if (!onBox && clientX > rect.left + slot) return false;   // 点正文区（含第一个字）→ 放行编辑，与勾选不冲突
   const now = Date.now();
   if (_memoTodoLastLi === li && now - _memoTodoLastMs < 600) return true;   // 去重：同一行 touchend+click 仅切一次，不挡不同行
   _memoTodoLastLi = li; _memoTodoLastMs = now;
@@ -2880,7 +2894,7 @@ function memoEditorHandleTodoTap(clientX, target) {
 }
 
 async function handleClick(e) {
-  if (memoEditorHandleTodoTap(e.clientX, e.target)) { e.preventDefault(); return; }
+  if (memoEditorHandleTodoTap(e.clientX, e.clientY)) { e.preventDefault(); return; }
   const t = e.target.closest('[data-action]');
   if (!t) return;
   const a = t.dataset.action;
@@ -4934,21 +4948,13 @@ function renderMemoEditor() {
     _er.addEventListener('touchstart', (e) => {
       if (e.touches.length === 1) { _teSX = e.touches[0].clientX; _teSY = e.touches[0].clientY; }
       // 命中勾选区 → 立即拦下 iOS 的聚焦/选字，抢在系统之前（解决「单击不动 / 已弹键盘后全失效」）
-      if (e.cancelable) {
-        const li = e.target.closest && e.target.closest('li[data-list="unchecked"], li[data-list="checked"]');
-        if (li) {
-          const onBox = e.target.closest && e.target.closest('.ql-ui');
-          const rect = li.getBoundingClientRect();
-          const slot = parseFloat(getComputedStyle(li).fontSize) * 1.2;
-          if (onBox || e.touches[0].clientX <= rect.left + slot) e.preventDefault();
-        }
-      }
+      if (e.cancelable && _memoTodoHitLi(_teSX, _teSY)) e.preventDefault();
     }, { passive: false });
     _er.addEventListener('touchend', (e) => {
       const tch = e.changedTouches && e.changedTouches[0];
       if (!tch) return;
       if (Math.abs(tch.clientX - _teSX) + Math.abs(tch.clientY - _teSY) > 12) return;   // 视为滑动/滚动
-      if (memoEditorHandleTodoTap(tch.clientX, e.target)) e.preventDefault();
+      if (memoEditorHandleTodoTap(tch.clientX, tch.clientY)) e.preventDefault();
     }, { passive: false });
   }
   const titleEl = $('memoTitle'), catEl = $('memoCat'), subEl = $('memoSub');
