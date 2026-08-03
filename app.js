@@ -4256,26 +4256,6 @@ function memoSyncBody() {
   /* 仅同步内容到内存（自动保存防丢失），不在此处刷新时间；时间只在「保存且真有改动」时由 memo-done 刷新 */
   if (n && memoQuill) { n.body = memoQuillToStorage(memoQuill.root.innerHTML); save(); }
 }
-/* 手机端在编辑器内点待办框打勾：复用 Quill 自身的勾选切换（formatLine 改 list 值），
-   这样勾选框与正文、卡片预览始终一致，且同步 Quill 数据模型（不会下次重渲染被还原）。
-   桌面端仍由 Quill 原生 mousedown 处理，本函数只在「触摸点按」时被调用。 */
-function memoToggleEditorTodo(li) {
-  if (!memoQuill || !li) return;
-  let idx = null;
-  try {
-    const blot = (typeof Quill !== 'undefined' && Quill.find) ? Quill.find(li) : null;
-    /* ⚠️ 必须用 memoQuill.getIndex(blot) 取【绝对文档位置】。
-       旧写法 blot.offset() 不带参数：递归到根 blot 时 this.parent 为 null，
-       null===undefined 为 false → 继续访问 null.children 抛 TypeError → 被下方 catch 吞掉 →
-       idx 恒为 null → 提前 return，手机端勾选永远失效。getIndex 会正确传入根 scroll 使递归正常结束。 */
-    if (blot && typeof memoQuill.getIndex === 'function') idx = memoQuill.getIndex(blot);
-  } catch (_) {}
-  if (idx == null || isNaN(idx)) return;
-  const fmt = memoQuill.getFormat(idx);
-  if (fmt.list !== 'checked' && fmt.list !== 'unchecked') return;   // 仅对待办行生效
-  const newVal = (fmt.list === 'checked') ? 'unchecked' : 'checked';
-  memoQuill.formatLine(idx, 1, 'list', newVal, Quill.sources.USER);
-}
 /* ---------- 待办清单：行首固定勾选框 / 空行新建同级 / 多行加框 ---------- */
 /* 自绘勾选框（不再用原生 <input>，避免嵌在可编辑区时手机打不了勾） */
 function memoMakeTodoCb() {
@@ -4920,33 +4900,6 @@ function renderMemoEditor() {
     const next = dx > 0 ? cur + 1 : cur - 1;
     memoQuill.format('indent', next > 0 ? next : false);
   }, { passive: true });
-  /* 第7项：手机端在编辑器内点待办框直接打勾。触摸点按会被浏览器当成"放光标/弹键盘"，
-     导致勾选框点不动；这里在触摸时拦截并调用 memoToggleEditorTodo 切换，桌面端仍走 Quill 原生。
-     命中判定改用「待办行左侧勾选槽」几何检测，而非精确命中 .ql-ui：
-     Quill 的 .ql-ui 为绝对定位、可见对勾还向左偏 1.5em（margin-left:-1.5em），
-     小屏手指极难点中，表现为「点几次才中」。改为取 .ql-ui 实际盒模型 + 容差，
-     落在其左侧勾选槽内即视为点勾选框，点正文区则照常放光标编辑。 */
-  let _memoCbLi = null;
-  _ed.addEventListener('touchstart', (e) => {
-    if (e.touches.length !== 1) return;
-    const li = e.target.closest ? e.target.closest('li[data-list="checked"], li[data-list="unchecked"]') : null;
-    if (!li) return;
-    const ui = li.querySelector('.ql-ui');
-    if (!ui) return;
-    const ur = ui.getBoundingClientRect();
-    const tr = li.getBoundingClientRect();
-    const tx = e.touches[0].clientX, ty = e.touches[0].clientY;
-    const PAD = 16; // 勾选框偏小且可见对勾向左偏，留出手指容差
-    if (tx < ur.left - PAD || tx > ur.right + PAD || ty < tr.top || ty > tr.bottom) return; // 点正文区则放行（编辑）
-    _memoCbLi = li;
-    if (e.cancelable) e.preventDefault();   // 阻止放光标/弹键盘/合成鼠标（避免与桌面 mousedown 重复切换）
-  }, { passive: false });
-  _ed.addEventListener('touchend', (e) => {
-    if (!_memoCbLi) return;
-    const li = _memoCbLi; _memoCbLi = null;
-    if (e.cancelable) e.preventDefault();
-    memoToggleEditorTodo(li);
-  }, { passive: false });
   const titleEl = $('memoTitle'), catEl = $('memoCat'), subEl = $('memoSub');
   titleEl.addEventListener('input', () => { n.title = titleEl.value; memoDirty = true; save(); });
   catEl.addEventListener('input', () => { n.cat = catEl.value.trim(); memoDirty = true; save(); });
