@@ -2855,7 +2855,31 @@ function openNutFoodModal(id, name) {
 }
 
 /* ---------------- 事件：点击 ---------------- */
+/* [v155] 编辑器内待办框手机端点击切换：与卡片预览同款 click 委托，并加 touchend 兜底（个别机型 contenteditable 内 click 不触发）。
+   经 jsdom 实测：用 memoQuill.getLines() 逐行累加定位 li（li0→0, li1→3），再 formatLine 切 checked/unchecked → 触发 text-change 自动存盘。 */
+let _memoTodoLastMs = 0;
+function memoEditorHandleTodoTap(clientX, target) {
+  if (!memoQuill || !memoQuill.root) return false;
+  if (!memoQuill.root.contains(target)) return false;
+  const li = target.closest && target.closest('li[data-list="unchecked"], li[data-list="checked"]');
+  if (!li) return false;
+  const rect = li.getBoundingClientRect();
+  const slot = parseFloat(getComputedStyle(li).fontSize) * 2.5;   // 勾选槽≈2.5em（覆盖可见方框+手指容差）
+  if (clientX > rect.left + slot) return false;   // 点正文区 → 放行编辑
+  const now = Date.now();
+  if (now - _memoTodoLastMs < 600) return true;   // 去重：touchend+click 同一次点按仅切一次
+  _memoTodoLastMs = now;
+  let idx = 0, found = false;
+  const lines = memoQuill.getLines();
+  for (const line of lines) { if (line.domNode === li) { found = true; break; } idx += line.length(); }
+  if (!found) return false;
+  const next = li.getAttribute('data-list') === 'checked' ? 'unchecked' : 'checked';
+  memoQuill.formatLine(idx, 1, 'list', next, Quill.sources.USER);   // → text-change 自动存盘
+  return true;
+}
+
 async function handleClick(e) {
+  if (memoEditorHandleTodoTap(e.clientX, e.target)) { e.preventDefault(); return; }
   const t = e.target.closest('[data-action]');
   if (!t) return;
   const a = t.dataset.action;
@@ -4900,6 +4924,21 @@ function renderMemoEditor() {
     const next = dx > 0 ? cur + 1 : cur - 1;
     memoQuill.format('indent', next > 0 ? next : false);
   }, { passive: true });
+  /* [v155] touchend 兜底：个别机型 contenteditable 内 click 不触发时，用 touchend 捕获点按（带 tap/滑动 判别避免滚动误触）。
+     与全局 handleClick 内的 click 委托共用 memoEditorHandleTodoTap，去重防双触发。 */
+  const _er = memoQuill ? memoQuill.root : null;
+  if (_er) {
+    let _teSX = 0, _teSY = 0;
+    _er.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 1) { _teSX = e.touches[0].clientX; _teSY = e.touches[0].clientY; }
+    }, { passive: true });
+    _er.addEventListener('touchend', (e) => {
+      const tch = e.changedTouches && e.changedTouches[0];
+      if (!tch) return;
+      if (Math.abs(tch.clientX - _teSX) + Math.abs(tch.clientY - _teSY) > 12) return;   // 视为滑动/滚动
+      if (memoEditorHandleTodoTap(tch.clientX, e.target)) e.preventDefault();
+    }, { passive: false });
+  }
   const titleEl = $('memoTitle'), catEl = $('memoCat'), subEl = $('memoSub');
   titleEl.addEventListener('input', () => { n.title = titleEl.value; memoDirty = true; save(); });
   catEl.addEventListener('input', () => { n.cat = catEl.value.trim(); memoDirty = true; save(); });
