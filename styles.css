@@ -1597,6 +1597,15 @@ body:has(.memo-chat) .topbar { position: sticky; top: 0; z-index: 20; }
   touch-action: manipulation;
 }
 
+/* 手机轻点命中区修复：Quill 默认把 .ql-ui 勾选框渲染成 0 宽（可见 ☐ 仅靠负 margin 画在盒子外边），
+   手机轻点按「元素面积」挑目标，0 宽元素被跳过→点不动，只能长按走精确判定（正对上「长按3秒才行」）。
+   这里给待办行 .ql-ui 补成 1.5em 实心区，用 margin-left 左移贴合方框（缩进行自动跟随）；
+   不改 Quill 原生勾选逻辑、视觉零变化（改前改后渲染 md5 一致）。 */
+.ql-editor li[data-list="checked"] > .ql-ui,
+.ql-editor li[data-list="unchecked"] > .ql-ui { width: 1.5em; margin-left: -1.5em; }
+.ql-editor li[data-list="checked"] > .ql-ui:before,
+.ql-editor li[data-list="unchecked"] > .ql-ui:before { margin-left: 0; }
+
 /* 列表标记自定义（用户指定 · 覆盖 Quill 原生，编辑器与卡片共用同一套 .ql-editor 渲染） */
 /* 无序列表：一级 ■ 二级 ○ 三级 ♦ 四级 ♢ */
 .ql-editor li[data-list=bullet] > .ql-ui:before { content: '\25A0'; }
