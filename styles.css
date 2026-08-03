@@ -1315,8 +1315,7 @@ body {
   }
   .memo-card-grip:active { cursor: grabbing; }
   .memo-card-main { flex: 1; min-width: 0; }
-  /* [v154] 编辑器待办框：屏蔽 .ql-ui 原生点击，交由 app.js 点击委托处理（手机端 contenteditable 点方框会放光标而非打勾） */
-  .ql-editor li > .ql-ui { pointer-events: none; }
+  /* [v162] 不再屏蔽 .ql-ui 点击：方框恢复为可点目标，勾选交由 app.js 的 touchstart/click 委托处理（仅限方框槽，不侵占正文编辑） */
 }
 .memo-card.expanded .memo-card-grip { display: none; }
 .memo-card-actions { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; white-space: nowrap; }

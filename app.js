@@ -2857,18 +2857,19 @@ function openNutFoodModal(id, name) {
 /* ---------------- 事件：点击 ---------------- */
 /* [v155] 编辑器内待办框手机端点击切换：与卡片预览同款 click 委托，并加 touchend 兜底（个别机型 contenteditable 内 click 不触发）。
    经 jsdom 实测：用 memoQuill.getLines() 逐行累加定位 li（li0→0, li1→3），再 formatLine 切 checked/unchecked → 触发 text-change 自动存盘。 */
-let _memoTodoLastMs = 0;
+let _memoTodoLastLi = null, _memoTodoLastMs = 0;
 function memoEditorHandleTodoTap(clientX, target) {
   if (!memoQuill || !memoQuill.root) return false;
   if (!memoQuill.root.contains(target)) return false;
   const li = target.closest && target.closest('li[data-list="unchecked"], li[data-list="checked"]');
   if (!li) return false;
+  const onBox = target.closest && target.closest('.ql-ui');   // 点中方框本体必勾（不依赖坐标，防几何错位）
   const rect = li.getBoundingClientRect();
-  const slot = parseFloat(getComputedStyle(li).fontSize) * 2.5;   // 勾选槽≈2.5em（覆盖可见方框+手指容差）
-  if (clientX > rect.left + slot) return false;   // 点正文区 → 放行编辑
+  const slot = parseFloat(getComputedStyle(li).fontSize) * 1.2;   // 勾选槽≈方框宽(1.2em)，不延伸到第一个字
+  if (!onBox && clientX > rect.left + slot) return false;   // 点正文区（含第一个字）→ 放行编辑，与勾选不冲突
   const now = Date.now();
-  if (now - _memoTodoLastMs < 600) return true;   // 去重：touchend+click 同一次点按仅切一次
-  _memoTodoLastMs = now;
+  if (_memoTodoLastLi === li && now - _memoTodoLastMs < 600) return true;   // 去重：同一行 touchend+click 仅切一次，不挡不同行
+  _memoTodoLastLi = li; _memoTodoLastMs = now;
   let idx = 0, found = false;
   const lines = memoQuill.getLines();
   for (const line of lines) { if (line.domNode === li) { found = true; break; } idx += line.length(); }
@@ -4924,14 +4925,25 @@ function renderMemoEditor() {
     const next = dx > 0 ? cur + 1 : cur - 1;
     memoQuill.format('indent', next > 0 ? next : false);
   }, { passive: true });
-  /* [v155] touchend 兜底：个别机型 contenteditable 内 click 不触发时，用 touchend 捕获点按（带 tap/滑动 判别避免滚动误触）。
-     与全局 handleClick 内的 click 委托共用 memoEditorHandleTodoTap，去重防双触发。 */
+  /* [v161] 触摸拦截：抢在 iOS 处理前动手。contenteditable 内一次触摸会被系统当成「弹键盘/选字」而盖掉我们的勾选；
+     故在 touchstart 命中方框槽（左侧约 1.2em）或点中方框本体时立即 preventDefault 拦下系统默认（不再聚焦/选字），再于 touchend（非滑动）时执行勾选。
+     桌面端走全局 handleClick 的 click 委托，不受此影响。 */
   const _er = memoQuill ? memoQuill.root : null;
   if (_er) {
     let _teSX = 0, _teSY = 0;
     _er.addEventListener('touchstart', (e) => {
       if (e.touches.length === 1) { _teSX = e.touches[0].clientX; _teSY = e.touches[0].clientY; }
-    }, { passive: true });
+      // 命中勾选区 → 立即拦下 iOS 的聚焦/选字，抢在系统之前（解决「单击不动 / 已弹键盘后全失效」）
+      if (e.cancelable) {
+        const li = e.target.closest && e.target.closest('li[data-list="unchecked"], li[data-list="checked"]');
+        if (li) {
+          const onBox = e.target.closest && e.target.closest('.ql-ui');
+          const rect = li.getBoundingClientRect();
+          const slot = parseFloat(getComputedStyle(li).fontSize) * 1.2;
+          if (onBox || e.touches[0].clientX <= rect.left + slot) e.preventDefault();
+        }
+      }
+    }, { passive: false });
     _er.addEventListener('touchend', (e) => {
       const tch = e.changedTouches && e.changedTouches[0];
       if (!tch) return;
