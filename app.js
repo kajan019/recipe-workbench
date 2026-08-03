@@ -4264,9 +4264,13 @@ function memoToggleEditorTodo(li) {
   let idx = null;
   try {
     const blot = (typeof Quill !== 'undefined' && Quill.find) ? Quill.find(li) : null;
-    if (blot && typeof blot.offset === 'function') idx = blot.offset();
+    /* ⚠️ 必须用 memoQuill.getIndex(blot) 取【绝对文档位置】。
+       旧写法 blot.offset() 不带参数：递归到根 blot 时 this.parent 为 null，
+       null===undefined 为 false → 继续访问 null.children 抛 TypeError → 被下方 catch 吞掉 →
+       idx 恒为 null → 提前 return，手机端勾选永远失效。getIndex 会正确传入根 scroll 使递归正常结束。 */
+    if (blot && typeof memoQuill.getIndex === 'function') idx = memoQuill.getIndex(blot);
   } catch (_) {}
-  if (idx == null) return;
+  if (idx == null || isNaN(idx)) return;
   const fmt = memoQuill.getFormat(idx);
   if (fmt.list !== 'checked' && fmt.list !== 'unchecked') return;   // 仅对待办行生效
   const newVal = (fmt.list === 'checked') ? 'unchecked' : 'checked';
