@@ -63,7 +63,7 @@ function scaleAmt(orig, factor) {
   return Math.round(orig * factor * 100) / 100;
 }
 /* 分量控件：prefix 区分查看页('portion')与采购页('p-portion') */
-function portionControlHTML(r, prefix) {
+function portionControlHTML(r, prefix, showReset = true) {
   const opts = baseIngredientOptions(r);
   if (!opts.length) return '';
   const baseId = (r.scaleBase && opts.some(o => o.id === r.scaleBase)) ? r.scaleBase : opts[0].id;
@@ -77,8 +77,8 @@ function portionControlHTML(r, prefix) {
       <select class="portion-base" data-action="${prefix}-base" data-id="${escAttr(r.id)}">${optHTML}</select>
       <span class="portion-eq">→</span>
       <input class="portion-amt" type="number" step="any" min="0" data-action="${prefix}-amt" data-id="${escAttr(r.id)}" value="${r.scaleAmount != null ? r.scaleAmount : ''}" placeholder="${base.amount}">
-      <button class="btn sm primary" data-action="${prefix}-confirm" data-id="${escAttr(r.id)}">确认</button>
-      <button class="tiny" data-action="${prefix}-reset" data-id="${escAttr(r.id)}" title="恢复原始用量">重置</button>
+      <button class="btn sm primary portion-confirm" data-action="${prefix}-confirm" data-id="${escAttr(r.id)}">确认</button>
+      ${showReset ? `<button class="tiny" data-action="${prefix}-reset" data-id="${escAttr(r.id)}" title="恢复原始用量">重置</button>` : ''}
       ${factor != null ? `<span class="portion-eq">已按 ${escHtml(factor)}× 调整</span>` : ''}
     </div>`;
 }
@@ -1196,6 +1196,7 @@ function navigate(view) {
   render();
 }
 let _memoChatActive = false;
+let _memoSchedActive = false;
 function render() {
   document.querySelectorAll('.nav-item').forEach(n => {
     const v = n.dataset.view;
@@ -1204,6 +1205,9 @@ function render() {
   const wasInChat = _memoChatActive;
   _memoChatActive = state.view === 'memo-chat';
   const enteringChat = state.view === 'memo-chat' && !wasInChat;
+  const wasInSched = _memoSchedActive;
+  _memoSchedActive = state.view === 'memo-schedule';
+  const enteringSchedule = state.view === 'memo-schedule' && !wasInSched;
   if (state.view === 'library' && state.editing) { renderEditor(); return; }
   if (state.view === 'library' && state.viewId) { renderRecipeView(state.viewId); return; }
   if (state.view === 'library') { renderLibrary(); return; }
@@ -1211,7 +1215,15 @@ function render() {
   if (state.view === 'filter') { renderFilter(); return; }
   if (state.view === 'nutrition') { rerenderNut(); return; }
   if (state.view === 'favorites') { renderFavorites(); return; }
-  if (state.view === 'memo-schedule') { renderMemoSchedule(); return; }
+  if (state.view === 'memo-schedule') {
+    /* 每次进入该组件时，月度日历默认回到今日（仅“进入”时重置，组件内翻月/选日期不受影响） */
+    if (enteringSchedule) {
+      const td = new Date();
+      state.memoScheduleDate = fmtDate(td.getTime());
+      memoScheduleCalMonth = { year: td.getFullYear(), month: td.getMonth() };
+    }
+    renderMemoSchedule(); return;
+  }
   if (state.view === 'memo-chat') {
     renderMemoChat();
     /* 仅“进入/切回速记”时自动滚到最新消息；页内重渲染（选中/搜索/删图）不滚动，保持用户当前滑块位置 */
@@ -1786,6 +1798,7 @@ function openPrepPicker(gid) {
 }
 
 /* ---------------- 采购 ---------------- */
+let purchaseExpanded = new Set();   // 采购页：已展开预览的菜谱 id（仅本会话，刷新即清零）
 function recomputePurchase() {
   const ing = [], sea = [];
   state.purchaseSelected.forEach(rid => {
@@ -1848,12 +1861,19 @@ function renderPurchase() {
     const on = state.purchaseSelected.includes(r.id);
     const tags = r.categories.map(t => `<span class="mini-tag">${escHtml(t)}</span>`).join('') +
       r.cookings.map(t => `<span class="mini-tag cook">${escHtml(t)}</span>`).join('');
+    const pc = portionControlHTML(r, 'p-portion', false);   // 分量设置（重置按钮已移到卡片头部名称右侧）
+    const expanded = purchaseExpanded.has(r.id);
+    const expandable = !!pc;
     return `
-      <div class="sel-row">
-        <input type="checkbox" ${on ? 'checked' : ''} data-action="sel-toggle" data-id="${r.id}">
-        <span class="nm">${escHtml(r.name) || '未命名菜谱'}</span>
-        <span class="tg">${tags}</span>
-        ${portionControlHTML(r, 'p-portion')}
+      <div class="sel-row ${expanded ? 'expanded' : ''} ${expandable ? 'expandable' : ''}">
+        <input type="checkbox" ${on ? 'checked' : ''} data-action="sel-toggle" data-id="${escAttr(r.id)}">
+        <div class="sel-head" ${expandable ? `data-action="sel-expand" data-id="${escAttr(r.id)}"` : ''}>
+          <span class="nm">${escHtml(r.name) || '未命名菜谱'}</span>
+          ${expandable ? `<button type="button" class="tiny btn-reset-inline" data-action="p-portion-reset" data-id="${escAttr(r.id)}" title="恢复原始用量">重置</button>` : ''}
+          <span class="tg">${tags}</span>
+          ${expandable ? `<span class="caret">${expanded ? '▾' : '▸'}</span>` : ''}
+        </div>
+        ${pc ? `<div class="sel-preview">${pc}</div>` : ''}
       </div>`;
   }).join('');
 
@@ -1867,7 +1887,8 @@ function renderPurchase() {
   content.innerHTML = `
     ${searchBar}
     <div class="section-head">
-      <div><span class="section-title">选择菜谱</span><span class="section-sub">勾选即实时汇总采购清单；每行可选基准食材并调整分量</span></div>
+      <div><span class="section-title">选择菜谱</span><span class="section-sub">每行可选基准进行份量调节。</span></div>
+      <button class="btn sm ghost" data-action="p-reset-sel">↻ 一键重置</button>
     </div>
     <div class="select-list">${selList || '<div class="empty">暂无匹配的菜谱</div>'}</div>
     <div id="purchase-list">${purchaseListHTML()}</div>`;
@@ -1921,8 +1942,14 @@ function purchaseRowHTML(col, r) {
 }
 function purchaseText() {
   const L = state.purchaseList; if (!L) return '';
+  const recipeNames = state.purchaseSelected.map(id => getRecipe(id)).filter(Boolean).map(r => '- ' + (r.name || '未命名菜谱'));
+  const recipeBlock = recipeNames.length ? `【菜谱名称】\n${recipeNames.join('\n')}` : '';
   const fmt = (rows) => rows.map(r => `- ${r.name}${r.qty != null ? ' ' + r.qty + (r.unit || '') : ''}`).join('\n');
-  return `【食材清单】\n${fmt(L.ingredients) || '（空）'}\n\n【调味料清单】\n${fmt(L.seasonings) || '（空）'}`;
+  const parts = [];
+  if (recipeBlock) parts.push(recipeBlock);
+  parts.push(`【食材清单】\n${fmt(L.ingredients) || '（空）'}`);
+  parts.push(`【调味料清单】\n${fmt(L.seasonings) || '（空）'}`);
+  return parts.join('\n\n');
 }
 
 /* ---------------- 分类筛选 ---------------- */
@@ -2145,13 +2172,13 @@ function nutScaleControlHTML(r) {
       <div class="nut-scale">
         <span class="nut-scale-label">基准食材</span>
         <select class="nut-scale-base" data-action="nut-scale-base" data-id="${escAttr(rid)}">${optHTML}</select>
-        <span class="nut-scale-eq">实际</span>
+        <span class="nut-scale-eq nut-scale-eq-right">实际</span>
         <input class="nut-scale-amt" type="number" step="any" min="0" data-action="nut-scale-amt" data-id="${escAttr(rid)}" value="${amount != null ? amount : ''}" placeholder="${baseG != null ? baseG : ''}"/>
         <select class="nut-scale-unit" data-action="nut-scale-unit" data-id="${escAttr(rid)}">
           <option value="g" ${unit === 'g' ? 'selected' : ''}>g</option>
           <option value="ml" ${unit === 'ml' ? 'selected' : ''}>ml</option>
         </select>
-        ${factor !== 1 ? `<span class="nut-scale-eq">整道菜按 ${factor.toFixed(2)}× 缩放</span>` : `<span class="nut-scale-eq dim">改「实际」用量即等比缩放其它用料</span>`}
+        ${factor !== 1 ? `<span class="nut-scale-eq">整道菜按 ${factor.toFixed(2)}× 缩放</span>` : ''}
       </div>`;
     return toggle + ctrl;
   }
@@ -2163,12 +2190,12 @@ function nutScaleControlHTML(r) {
     <div class="nut-scale">
       <span class="nut-scale-label">基准份量</span>
       <span class="nut-scale-eq">总重量</span>
-      <input class="nut-scale-total" type="number" readonly value="${total ? Math.round(total) : ''}" placeholder="0"/>
-      <span class="nut-scale-eq">g</span>
-      <span class="nut-scale-eq">实际</span>
+        <span class="nut-scale-total-text">${total ? Math.round(total) : '0'}</span>
+        <span class="nut-scale-eq">g</span>
+        <span class="nut-scale-eq nut-scale-eq-after">实际</span>
       <input class="nut-scale-actual" type="number" step="any" min="0" data-action="nut-scale-actual" data-id="${escAttr(rid)}" value="${actual != null ? actual : ''}" placeholder="可输入克重"/>
       <span class="nut-scale-eq">g</span>
-      ${total <= 0 ? `<span class="nut-scale-eq dim">请先给食材 / 调味料填克或毫升</span>` : (factor !== 1 ? `<span class="nut-scale-eq">整道菜按 ${factor.toFixed(2)}× 缩放</span>` : `<span class="nut-scale-eq dim">改「实际」克重即按比例缩放热量</span>`)}
+      ${total <= 0 ? `<span class="nut-scale-eq dim">请先给食材 / 调味料填克或毫升</span>` : (factor !== 1 ? `<span class="nut-scale-eq">整道菜按 ${factor.toFixed(2)}× 缩放</span>` : '')}
     </div>`;
   return toggle + ctrl;
 }
@@ -2704,15 +2731,15 @@ function renderNutLib() {
     .sort((a, b) => a.name.localeCompare(b.name, 'zh'));
   const rows = list.map(f => `
     <div class="nut-food" data-action="nut-edit-food" data-id="${escAttr(f.id)}">
-      <div class="nut-food-name">${escHtml(f.name)}</div>
-      <div class="nut-food-kcal">${f.kcal} <small>kcal/100g</small></div>
+      <div class="nut-food-left">
+        <div class="nut-food-name">${escHtml(f.name)}</div>
+        <div class="nut-food-kcal">${f.kcal}</div>
+        <div class="nut-food-unit">kcal/100g</div>
+      </div>
       <div class="nut-food-macros">
         <span class="macro-t p">蛋白 ${f.protein}g</span>
         <span class="macro-t f">脂肪 ${f.fat}g</span>
         <span class="macro-t c">碳水 ${f.carb}g</span>
-        ${f.sugar != null && f.sugar !== '' ? `<span class="macro-t s">糖 ${f.sugar}g</span>` : ''}
-        ${f.sodium != null && f.sodium !== '' ? `<span class="macro-t s">盐 ${f.sodium}mg</span>` : ''}
-        ${f.fiber != null && f.fiber !== '' ? `<span class="macro-t s">纤维 ${f.fiber}g</span>` : ''}
       </div>
     </div>`).join('') || '<p class="dim">没有匹配的食物</p>';
   return `
@@ -3091,8 +3118,25 @@ async function handleClick(e) {
     case 'sel-toggle': {
       const id = t.dataset.id;
       const i = state.purchaseSelected.indexOf(id);
-      if (i >= 0) state.purchaseSelected.splice(i, 1); else state.purchaseSelected.push(id);
+      if (i >= 0) { state.purchaseSelected.splice(i, 1); purchaseExpanded.delete(id); }
+      else state.purchaseSelected.push(id);
       recomputePurchase();
+      renderPurchase();
+      break;
+    }
+    // 采购卡片：单击展开/收起预览（含分量设置与重置）
+    case 'sel-expand': {
+      const id = t.dataset.id;
+      if (purchaseExpanded.has(id)) purchaseExpanded.delete(id); else purchaseExpanded.add(id);
+      renderPurchase();
+      break;
+    }
+    // 一键重置：清空菜谱勾选
+    case 'p-reset-sel': {
+      state.purchaseSelected = [];
+      state.purchaseList = null;
+      purchaseExpanded.clear();
+      save();
       renderPurchase();
       break;
     }
@@ -3972,8 +4016,9 @@ function noteItemHTML(n) {
   const expanded = state.memoExpandId === n.id;
   /* 只要未展开即可拖拽（全部/标签/无标签/小标签/收藏视图均可；仅展开态不可拖以避免错位）。
      拖拽重排由 persistMemoOrder 做「局部重排」：只调整当前筛选笔记之间的相对先后顺序，
-     不会把当前筛选的笔记抢到全局最前，也不会打乱其它笔记在「全部笔记」视图里的相对位置。 */
-  const draggable = expanded ? 'false' : 'true';
+     不会把当前筛选的笔记抢到全局最前，也不会打乱其它笔记在「全部笔记」视图里的相对位置。
+     拖拽改用指针事件（鼠标+触摸通用，见 attachMemoSortable），故这里统一 draggable="false" 关闭原生拖拽。 */
+  const draggable = 'false';
   const snippet = (stripHtml(n.body) || '').replace(/\s+/g, ' ').slice(0, 80) || '（空）';
   const chips = (n.cat ? '<span class="memo-chip">' + escHtml(n.cat) + '</span>' : '')
     + (n.sub ? '<span class="memo-chip sub">' + escHtml(n.sub) + '</span>' : '');
@@ -3984,6 +4029,7 @@ function noteItemHTML(n) {
     + '</div>';
   if (expanded) {
     return '<div class="memo-card expanded' + (n.fav ? ' fav' : '') + '" draggable="' + draggable + '">'
+      + '<div class="memo-card-grip" aria-label="拖动排序">⋮⋮</div>'
       + '<div class="memo-card-main" data-action="memo-card-toggle" data-id="' + escAttr(n.id) + '">'
       + '<div class="memo-card-top"><div class="memo-card-title">' + escHtml(n.title || '未命名笔记') + '</div>' + actions + '</div>'
       + '</div>'
@@ -3992,6 +4038,7 @@ function noteItemHTML(n) {
       + '</div>';
   }
   return '<div class="memo-card' + (n.fav ? ' fav' : '') + '" draggable="' + draggable + '">'
+    + '<div class="memo-card-grip" aria-label="拖动排序">⋮⋮</div>'
     + '<div class="memo-card-main" data-action="memo-card-toggle" data-id="' + escAttr(n.id) + '">'
     + '<div class="memo-card-top"><div class="memo-card-title">' + escHtml(n.title || '未命名笔记') + '</div>' + actions + '</div>'
     + '<div class="memo-card-snippet">' + escHtml(snippet) + '</div>'
@@ -4014,23 +4061,77 @@ function getDragAfterElement(container, y) {
   }
   return closest.element;
 }
+/* 指针事件拖拽排序（鼠标 + 触摸通用）：长按/按住卡片本体（非按钮区）移动即可重排。
+   替换原「原生 HTML5 拖拽」——原生拖拽在手机触摸屏上根本不会触发，导致手机无法排序。 */
 function attachMemoSortable(listEl) {
-  if (!listEl) return;
-  listEl.querySelectorAll('.memo-card').forEach(card => {
-    card.addEventListener('dragstart', () => { card.classList.add('dragging'); });
-    card.addEventListener('dragend', () => { card.classList.remove('dragging'); persistMemoOrder(listEl); });
-  });
-  if (!listEl._sortable) {
-    listEl.addEventListener('dragover', e => {
-      e.preventDefault();
-      const dragging = listEl.querySelector('.dragging');
-      if (!dragging) return;
-      const after = getDragAfterElement(listEl, e.clientY);
-      if (after == null) listEl.appendChild(dragging);
-      else listEl.insertBefore(dragging, after);
-    });
-    listEl._sortable = true;
+  if (!listEl || listEl._memoSortable) return;
+  listEl._memoSortable = true;
+  let dragEl = null, started = false, ph = null, startX = 0, startY = 0, grabX = 0, grabY = 0;
+  listEl.addEventListener('pointerdown', onDown);
+  function onDown(e) {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;            // 仅左键
+    const card = e.target.closest('.memo-card');
+    if (!card || card.classList.contains('expanded')) return;            // 展开态不可拖
+    /* 手机端（触摸）只能在左侧手柄上启动拖拽，长按卡片正文不再变成选文字；桌面端仍可用整卡拖动 */
+    if (e.pointerType === 'touch') {
+      if (!e.target.closest('.memo-card-grip')) return;
+    } else if (e.target.closest('[data-action], button, a, input, textarea, label, .memo-card-actions')) {
+      return; // 控件区不触发拖拽，保证点击/展开正常
+    }
+    dragEl = card; started = false; startX = e.clientX; startY = e.clientY;
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onUp);
   }
+  function onMove(e) {
+    if (!dragEl) return;
+    if (!started) {
+      if (Math.hypot(e.clientX - startX, e.clientY - startY) < 6) return; // 6px 阈值：轻点仍视为点击（展开）
+      started = true;
+      const rect = dragEl.getBoundingClientRect();
+      grabX = startX - rect.left; grabY = startY - rect.top;
+      ph = document.createElement('div');
+      ph.className = 'memo-card-placeholder';
+      ph.style.height = rect.height + 'px';
+      dragEl.classList.add('dragging');
+      dragEl.style.position = 'fixed';
+      dragEl.style.width = rect.width + 'px';
+      dragEl.style.left = rect.left + 'px';
+      dragEl.style.top = rect.top + 'px';
+      dragEl.style.zIndex = '100';
+      dragEl.style.pointerEvents = 'none';
+      dragEl.parentNode.insertBefore(ph, dragEl);
+    }
+    dragEl.style.left = (e.clientX - grabX) + 'px';
+    dragEl.style.top = (e.clientY - grabY) + 'px';
+    if (e.cancelable) e.preventDefault();   // 拖拽中阻止页面滚动
+    const under = document.elementFromPoint(e.clientX, e.clientY);
+    const over = under && under.closest('.memo-card');
+    if (over && over !== dragEl && over !== ph) {
+      const r = over.getBoundingClientRect();
+      if ((e.clientY - r.top) < (r.height / 2)) over.parentNode.insertBefore(ph, over);
+      else over.parentNode.insertBefore(ph, over.nextSibling);
+    }
+  }
+  function onUp() {
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+    document.removeEventListener('pointercancel', onUp);
+    if (!dragEl) return;
+    if (started) {
+      dragEl.classList.remove('dragging');
+      dragEl.style.position = ''; dragEl.style.width = ''; dragEl.style.left = '';
+      dragEl.style.top = ''; dragEl.style.zIndex = ''; dragEl.style.pointerEvents = '';
+      if (ph && ph.parentNode) { ph.parentNode.insertBefore(dragEl, ph); ph.parentNode.removeChild(ph); }
+      persistMemoOrder(listEl);
+      listEl._suppressClick = true;   // 拖完抑制这次松手引发的 click，避免卡片被误展开
+    }
+    dragEl = null; started = false; ph = null;
+  }
+  /* 拖拽结束后抑制松手引发的 click（仅当本次确实发生过拖拽） */
+  listEl.addEventListener('click', (e) => {
+    if (listEl._suppressClick) { listEl._suppressClick = false; e.stopPropagation(); e.preventDefault(); }
+  }, true);
 }
 function persistMemoOrder(listEl) {
   const ids = Array.from(listEl.children).filter(c => c.dataset && c.dataset.id).map(c => c.dataset.id);
@@ -4154,6 +4255,22 @@ function memoSyncBody() {
   const n = memoCurNote();
   /* 仅同步内容到内存（自动保存防丢失），不在此处刷新时间；时间只在「保存且真有改动」时由 memo-done 刷新 */
   if (n && memoQuill) { n.body = memoQuillToStorage(memoQuill.root.innerHTML); save(); }
+}
+/* 手机端在编辑器内点待办框打勾：复用 Quill 自身的勾选切换（formatLine 改 list 值），
+   这样勾选框与正文、卡片预览始终一致，且同步 Quill 数据模型（不会下次重渲染被还原）。
+   桌面端仍由 Quill 原生 mousedown 处理，本函数只在「触摸点按」时被调用。 */
+function memoToggleEditorTodo(li) {
+  if (!memoQuill || !li) return;
+  let idx = null;
+  try {
+    const blot = (typeof Quill !== 'undefined' && Quill.find) ? Quill.find(li) : null;
+    if (blot && typeof blot.offset === 'function') idx = blot.offset();
+  } catch (_) {}
+  if (idx == null) return;
+  const fmt = memoQuill.getFormat(idx);
+  if (fmt.list !== 'checked' && fmt.list !== 'unchecked') return;   // 仅对待办行生效
+  const newVal = (fmt.list === 'checked') ? 'unchecked' : 'checked';
+  memoQuill.formatLine(idx, 1, 'list', newVal, Quill.sources.USER);
 }
 /* ---------- 待办清单：行首固定勾选框 / 空行新建同级 / 多行加框 ---------- */
 /* 自绘勾选框（不再用原生 <input>，避免嵌在可编辑区时手机打不了勾） */
@@ -4799,10 +4916,37 @@ function renderMemoEditor() {
     const next = dx > 0 ? cur + 1 : cur - 1;
     memoQuill.format('indent', next > 0 ? next : false);
   }, { passive: true });
+  /* 第7项：手机端在编辑器内点待办框直接打勾。触摸点按会被浏览器当成"放光标/弹键盘"，
+     导致勾选框点不动；这里在触摸时拦截并调用 memoToggleEditorTodo 切换，桌面端仍走 Quill 原生。 */
+  let _memoCbLi = null;
+  _ed.addEventListener('touchstart', (e) => {
+    const ui = e.target.closest ? e.target.closest('.ql-ui') : null;
+    if (!ui) return;
+    const li = ui.closest('li[data-list="checked"], li[data-list="unchecked"]');
+    if (!li) return;
+    _memoCbLi = li;
+    if (e.cancelable) e.preventDefault();   // 阻止放光标/弹键盘/合成鼠标（避免与桌面 mousedown 重复切换）
+  }, { passive: false });
+  _ed.addEventListener('touchend', (e) => {
+    if (!_memoCbLi) return;
+    const li = _memoCbLi; _memoCbLi = null;
+    if (e.cancelable) e.preventDefault();
+    memoToggleEditorTodo(li);
+  }, { passive: false });
   const titleEl = $('memoTitle'), catEl = $('memoCat'), subEl = $('memoSub');
   titleEl.addEventListener('input', () => { n.title = titleEl.value; memoDirty = true; save(); });
   catEl.addEventListener('input', () => { n.cat = catEl.value.trim(); memoDirty = true; save(); });
   subEl.addEventListener('input', () => { n.sub = subEl.value.trim(); memoDirty = true; save(); });
+  /* 三、进入编辑器默认滑块置顶：覆盖 window/#content/#memoEditor/.memo-edit 四个候选滚动容器。
+     同步先置一次，再用双 requestAnimationFrame 等 Quill 异步聚焦/布局稳定后再置顶，
+     避免矮屏/窄屏时异步滚动把滑块推下去（不继承列表页滚动位置）。 */
+  const memoEditorScrollTop = () => {
+    try { window.scrollTo(0, 0); } catch (_) {}
+    ['content', 'memoEditor'].forEach((id) => { const el = $(id); if (el) try { el.scrollTop = 0; } catch (_) {} });
+    const _me = document.querySelector('.memo-edit'); if (_me) try { _me.scrollTop = 0; } catch (_) {}
+  };
+  memoEditorScrollTop();
+  requestAnimationFrame(() => requestAnimationFrame(memoEditorScrollTop));
 }
 
 /* 颜色 / 高亮选择：锚定在工具栏按钮下方的小浮层（非全屏弹窗） */
@@ -4990,6 +5134,16 @@ function renderMemoSchedule() {
     + '<div class="memo-schedule-cal-wrap">' + memoScheduleCalInner() + '</div>'
     + '</div></div>';
   initScheduleDrag();
+  /* 进入「今日日程」默认滑块置顶：覆盖 window/#content/.memo-schedule 候选滚动容器。
+     同步先置一次，再用双 requestAnimationFrame 等月历渲染/布局稳定后再置顶，
+     矮屏/窄屏内容更高时也从最上方开始（不继承上一个视图的滚动位置）。 */
+  const memoSchedScrollTop = () => {
+    try { window.scrollTo(0, 0); } catch (_) {}
+    ['content'].forEach((id) => { const el = $(id); if (el) try { el.scrollTop = 0; } catch (_) {} });
+    const _sc = document.querySelector('.memo-schedule'); if (_sc) try { _sc.scrollTop = 0; } catch (_) {}
+  };
+  memoSchedScrollTop();
+  requestAnimationFrame(() => requestAnimationFrame(memoSchedScrollTop));
 }
 /* 拖拽排序：把当前日期的任务按新顺序（ids）写回全局数组，保持该日期块内顺序、不动其他日期 */
 function reorderScheduleTasks(ids) {

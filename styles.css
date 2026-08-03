@@ -385,13 +385,20 @@ body {
   flex-wrap: wrap;
 }
 .sel-row input[type=checkbox] { width: 17px; height: 17px; cursor: pointer; }
-.sel-row .nm { font-weight: 600; }
-.sel-row .tg { display: flex; gap: 5px; }
-.sel-row .portion-box { margin: 0 0 0 auto; background: transparent; border: none; padding: 0; width: auto; }
+.sel-row .nm { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sel-row .tg { display: flex; gap: 5px; flex: 0 0 auto; }
+.sel-row.expandable .sel-head { cursor: pointer; }
+.sel-head { flex: 1; display: flex; align-items: center; gap: 10px; min-width: 0; }
+.sel-head .btn-reset-inline { flex: 0 0 auto; margin-left: 6px; padding: 2px 9px; font-size: 12px; border-radius: 12px; line-height: 1.6; }
+.caret { margin-left: auto; color: var(--text-3); font-size: 12px; }
+.sel-preview { flex-basis: 100%; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); }
+.sel-row:not(.expanded) .sel-preview { display: none; }
+.sel-preview .portion-box { margin: 0; background: transparent; border: none; padding: 0; width: auto; flex-wrap: wrap; gap: 8px; }
+.sel-preview .portion-box .portion-amt { flex: 0 0 auto; }
+.sel-preview .portion-box .portion-confirm { flex: 0 0 auto; margin-left: 2px; }
 .sel-row .portion-box .portion-base { min-width: 110px; padding: 4px 6px; }
 .sel-row .portion-box .portion-amt { width: 70px; padding: 4px 6px; }
 @media (max-width: 640px) {
-  .sel-row .portion-box { margin-left: 0; flex-basis: 100%; }
   .sel-row .tg { margin-left: auto; }
 }
 
@@ -463,16 +470,24 @@ body {
 .nut-searchbar { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
 .nut-searchbar .search-ico { font-size: 15px; color: var(--text-3); }
 .nut-searchbar .search-box { flex: 1; }
+.nut-searchbar .btn { flex: 0 0 auto; white-space: nowrap; }
+@media (max-width: 640px) {
+  .nut-searchbar { flex-wrap: wrap; }
+  .nut-searchbar .search-box { flex: 1 1 100%; }
+}
 .nut-food-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
 .nut-food {
   background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
   padding: 13px 15px; cursor: pointer; transition: all .15s;
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
 }
+.nut-food-left { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
 .nut-food:hover { border-color: var(--brand); box-shadow: var(--shadow); }
-.nut-food-name { font-weight: 700; font-size: 15px; color: var(--text); }
-.nut-food-kcal { font-size: 18px; font-weight: 800; color: var(--brand-2); margin: 4px 0 6px; }
-.nut-food-kcal small { font-size: 11px; font-weight: 500; color: var(--text-3); }
-.nut-food-macros { display: flex; flex-wrap: wrap; gap: 6px; }
+.nut-food-name { font-weight: 700; font-size: 17px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nut-food-kcal { font-size: 18px; font-weight: 800; color: var(--brand-2); margin: 0; white-space: nowrap; flex: 0 0 auto; }
+.nut-food-unit { font-size: 11px; font-weight: 500; color: var(--text-3); margin: 0; }
+
+.nut-food-macros { display: flex; flex-direction: column; gap: 4px; flex: 0 0 auto; align-items: flex-start; }
 .macro-t { font-size: 11px; padding: 2px 8px; border-radius: 999px; }
 .macro-t.p { background: var(--brand-soft); color: var(--brand-2); }
 .macro-t.f { background: var(--pink-soft); color: var(--pink-deep); }
@@ -484,6 +499,28 @@ body {
 .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0; }
 .field-grid .field-label { font-size: 12px; }
 
+/* ===== 一、食物营养库编辑表单：双列网格 + 固定宽标签 + 输入框限宽 ===== */
+.nut-food-modal { width: 100%; max-width: min(680px, calc(100vw - 48px)); }
+.nut-food-modal .field-row { display: block; margin-bottom: 14px; }
+.nut-food-modal .field-row .field { display: flex; align-items: center; gap: 10px; margin-bottom: 0; }
+.nut-food-modal .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 28px; margin: 14px 0; }
+.nut-food-modal .field-grid .field { display: flex; align-items: center; gap: 10px; margin-bottom: 0; min-width: 0; }
+.nut-food-modal .field-label {
+  display: block; flex: 0 0 120px; width: 120px; margin-bottom: 0; font-size: 13px;
+  text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.nut-food-modal .finput {
+  flex: 1 1 auto; min-width: 96px; max-width: 220px;
+  padding: 9px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  font-size: 14px; background: var(--panel); color: var(--text); font-family: inherit;
+}
+.nut-food-modal .finput:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
+.nut-food-modal .field-row .finput { max-width: 420px; }
+@media (max-width: 600px) {
+  .nut-food-modal .field-grid { grid-template-columns: 1fr; gap: 12px; }
+  .nut-food-modal .finput { max-width: none; }
+}
+
 /* ============ 各模块独立搜索栏 ============ */
 .mod-searchbar { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
 .mod-searchbar .search-ico { font-size: 15px; color: var(--text-3); }
@@ -494,7 +531,7 @@ body {
 /* ============ 营养测算：多选 / 份数 / 记录 ============ */
 .nut-select-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
 .nut-select-acts { display: flex; align-items: center; gap: 8px; }
-.nut-sel-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin-bottom: 18px; }
+.nut-sel-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; margin-bottom: 18px; }
 .nut-sel { display: flex; flex-direction: column; align-items: stretch; gap: 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 11px 13px; }
 .nut-sel.on { border-color: var(--brand); box-shadow: 0 0 0 2px var(--brand-soft); }
 .nut-sel-label { display: flex; align-items: center; gap: 9px; cursor: pointer; }
@@ -512,17 +549,31 @@ body {
 .nut-ov-name { font-weight: 600; }
 .nut-ov-input { width: 52px; border: none; border-bottom: 1px solid var(--border-strong); font-size: 12px; padding: 2px 3px; text-align: center; font-family: inherit; }
 /* 基准食材缩放（替代份数） */
-.nut-scale { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; background: var(--panel-2); border-radius: 10px; padding: 8px 10px; font-size: 12px; }
+.nut-scale { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; overflow: hidden; background: var(--panel-2); border-radius: 10px; padding: 8px 10px; font-size: 12px; }
 .nut-scale-label { font-weight: 700; color: var(--text-2); }
 .nut-scale-eq { color: var(--text-3); }
 .nut-scale-eq.dim { font-size: 11px; }
-.nut-scale select, .nut-scale input { padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); font-size: 12px; font-family: inherit; }
+.nut-scale select, .nut-scale input { padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); font-size: 12px !important; font-family: inherit; }  /* !important 覆盖手机端全局 16px 强制规则，使控件行(含基准食材)字号与「实际」标签统一为 12px */
+.nut-scale input::placeholder { font-size: 12px; }  /* 提示语字号与「实际」标签一致（手机端不被 16px 强制规则放大） */
+.nut-scale > * { white-space: nowrap; }
+.nut-scale-label { flex: 0 0 auto; }                                              /* 标签：固定，不压缩 */
+.nut-scale-base { flex: 1 1 auto; min-width: 0; }                                 /* 下拉框：宽屏按内容宽度展示不压缩；窄屏随页面宽度自适应收缩（控件行不再横滑，全部一屏展示） */
+.nut-scale-unit { flex: 0 0 42px; max-width: 42px; min-width: 0; padding-left: 1px; padding-right: 1px; }       /* 单位：固定窄宽，不压缩 */
+.nut-scale-amt { flex: 0 0 56px; width: 56px; }                                   /* 实际用量输入框：固定宽，不压缩 */
+.nut-scale-actual { flex: 0 0 85px; width: 85px; }                               /* 实际克重输入框：固定宽为原128px的三分之二(约85px)，不压缩 */
+.nut-scale-total-text { flex: 0 0 auto; display: inline-block; text-align: center; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel-2); color: var(--text-2); font-family: inherit; font-size: 12px; }  /* 总重量：纯文本，不压缩 */
+.nut-scale-eq { flex: 0 0 auto; }                                                 /* 文字（实际/总重量/g/缩放说明）：固定，不压缩 */
+.nut-scale-eq-right { margin-left: auto; }                                        /* 基准食材：右侧组（实际+输入框+单位）靠右，下拉框填充中间，整行铺满无留白 */
+.nut-scale-eq-after { margin-left: 0; }                                           /* 基准份量：「实际+输入框+单位」固定在总重量单位(g)之后，不再推到中线 */
+@media (max-width: 640px) {
+  .nut-scale input, .nut-scale select, .nut-scale-total-text { font-size: 11px; }
+}
 /* 基准缩放模式切换（基准食材 / 基准份量 二选一） */
 .nut-scale-mode { display: flex; gap: 6px; margin-bottom: 8px; }
 .nut-scale-mode-btn { flex: 1; padding: 7px 0; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--panel); color: var(--text-2); font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
 .nut-scale-mode-btn.on { background: linear-gradient(135deg, var(--brand-2), var(--pink)); color: #fff; border-color: transparent; }
-.nut-scale-total { width: 64px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel-2); color: var(--text-2); font-family: inherit; font-size: 12px; text-align: center; }
-.nut-scale .nut-scale-amt { width: 72px; }
+.nut-scale-total { width: 56px; flex: 0 0 56px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel-2); color: var(--text-2); font-family: inherit; font-size: 12px; text-align: center; }
+.nut-scale .nut-scale-amt { width: 56px; }
 .nut-scale-hint { font-size: 12px; color: var(--text-3); }
 /* 未记录用量的食材：下拉框 + 手动填写 */
 .nut-imp { background: var(--panel-2); border-radius: 10px; padding: 8px 10px; }
@@ -810,8 +861,9 @@ body {
     overflow-y: auto;
   }
   .drawer.open { transform: translateX(0); }
-  .drawer-head { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 18px 4px 14px; position: relative; }
-  .drawer-head .brand-avatar { width: 48px; height: 48px; font-size: 26px; border-radius: 14px; }
+  .drawer-head { display: flex; flex-direction: row; align-items: center; justify-content: flex-start; flex-wrap: nowrap; gap: 8px; padding: 10px 40px 12px 4px; position: relative; }
+  .drawer-head .brand-avatar { width: 34px; height: 34px; font-size: 18px; border-radius: 11px; flex: 0 0 auto; }
+  .drawer-head .brand-title { font-size: 13px; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .drawer-head .drawer-close { position: absolute; top: 8px; right: 8px; }
   .drawer-close {
     flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%;
@@ -990,6 +1042,11 @@ body {
   background-size: cover; background-position: center; background-color: var(--panel-2);
 }
 .fav-cover-ph { font-size: 12px; color: var(--text-3); padding: 4px 2px; }
+
+/* ===== 二、菜谱收藏夹编辑弹窗：宽度随屏幕自适应，禁止横向滚动 ===== */
+.modal-panel.fav-add { width: 100%; max-width: min(560px, calc(100vw - 48px)); overflow-x: hidden; }
+.fav-add .input, .fav-add .fav-raw, .fav-add .fav-file { width: 100%; max-width: 100%; box-sizing: border-box; }
+.fav-add .fav-thumbs { max-width: 100%; }
 
 /* 收藏夹卡片 */
 .fav-card {
@@ -1235,12 +1292,28 @@ body {
 
 /* 列表卡片：内联展开 / 收藏 / 拖拽排序 */
 .memo-card { cursor: default; }
-.memo-card[draggable="true"] { cursor: grab; }
-.memo-card[draggable="true"]:active { cursor: grabbing; }
+.memo-card:not(.expanded) { cursor: grab; }
+.memo-card:not(.expanded):active { cursor: grabbing; }
 .memo-card.expanded { border-color: #a78bfa; }
 .memo-card.fav { box-shadow: inset 3px 0 0 #f5b301; }
-.memo-card.dragging { opacity: .5; }
+.memo-card.dragging { opacity: .9; box-shadow: 0 8px 24px rgba(0,0,0,.18); border-color: #a78bfa; }
+.memo-card-placeholder { background: rgba(124,58,237,.08); border: 2px dashed #c4b5fd; border-radius: 12px; box-sizing: border-box; }
 .memo-card-main { cursor: pointer; }
+/* 手机端拖拽手柄：仅触摸设备显示（桌面仍可用整卡拖动，见 attachMemoSortable）；展开态不可拖，手柄隐藏 */
+.memo-card-grip { display: none; }
+@media (hover: none) and (pointer: coarse) {
+  .memo-card { display: flex; align-items: stretch; gap: 8px; }
+  .memo-card-grip {
+    display: flex; align-items: center; justify-content: center;
+    flex: 0 0 auto; width: 22px;
+    color: var(--text-3); font-size: 20px; line-height: 1;
+    cursor: grab; user-select: none; -webkit-user-select: none;
+    touch-action: none;   /* 手柄上拖动不触发页面滚动/选字 */
+  }
+  .memo-card-grip:active { cursor: grabbing; }
+  .memo-card-main { flex: 1; min-width: 0; }
+}
+.memo-card.expanded .memo-card-grip { display: none; }
 .memo-card-actions { display: flex; align-items: center; gap: 4px; }
 .memo-star, .memo-card-edit { border: none; background: transparent; cursor: pointer; font-size: 15px; padding: 2px 6px; border-radius: 6px; color: var(--text-3); }
 .memo-star:hover { background: #fef3c7; }
@@ -1352,7 +1425,10 @@ body {
 .memo-swatch-none.active { border-color: #7c3aed; color: #7c3aed; background: #ede9fe; }
 
 /* 速记（聊天式） */
-.memo-chat { display: flex; flex-direction: column; height: 100%; }
+/* 速记页：仅当 body 含 .memo-chat 时，让 .content 变弹性列，使 .memo-chat 跨浏览器（含 iOS Safari）可靠拿到确定高度，
+   列表才能内部滚动、搜索栏/输入栏固定，避免「百分比高度挂在弹性子项上算不出」导致整页滚动、搜索栏被带走 */
+body:has(.memo-chat) .content { display: flex; flex-direction: column; }
+.memo-chat { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
 /* 顶部搜索栏吸顶：包一层普通 div(.memo-searchbar-wrap)，让 sticky 相对整页 window 生效，
    绕开 WebKit(Safari/ivi.cx) 下「flex 容器的 sticky 子项不触发」的坑（搜索栏本身是 .memo-chat 的 flex 子项时会失效） */
 .memo-chat .memo-searchbar-wrap {
@@ -1368,7 +1444,7 @@ body {
 .memo-chat .memo-searchbar { margin-bottom: 0; }
 /* 速记页：桌面端也让顶栏吸顶，搜索栏才能吸在正下方（仅作用于速记页，不波及其它桌面页） */
 body:has(.memo-chat) .topbar { position: sticky; top: 0; z-index: 20; }
-.memo-chat-list { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 10px; padding: 14px 4px; }
+.memo-chat-list { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 10px; padding: 14px 4px; }
 .memo-bubble-row { display: flex; flex-direction: column; align-items: flex-end; max-width: 78%; margin-left: auto; cursor: pointer; position: relative; }
 .memo-bubble { background: #a78bfa; color: #fff; border-radius: 14px 14px 4px 14px; padding: 9px 13px; font-size: 15px; line-height: 1.55; word-break: break-word; max-width: 100%; }
 .memo-bubble-text-in, .memo-chat-text-in { white-space: pre-wrap; word-break: break-word; }
@@ -1412,8 +1488,9 @@ body:has(.memo-chat) .topbar { position: sticky; top: 0; z-index: 20; }
   .memo-card-title { min-width: 0; flex: 1 1 auto; }
   .memo-card-actions { flex: 0 0 auto; white-space: nowrap; }
 
-  /* 速记顶部搜索栏：手机端吸在顶栏正下方（顶栏 sticky top:0，搜索栏贴其下） */
-  .memo-chat .memo-searchbar-wrap { top: var(--memo-toolbar-top, 56px); z-index: 19; }
+  /* 速记顶部搜索栏：窄屏整页由 window 滚动（.app 改 height:auto / .content overflow:visible，列表无法内部滚动），
+     故改用 sticky 贴顶栏正下方吸顶；桌面端仍是弹性列内部滚动、搜索栏天然固定，不在此改，避免破坏已修好的宽屏 */
+  .memo-chat .memo-searchbar-wrap { position: -webkit-sticky; position: sticky; top: var(--memo-toolbar-top, 56px); z-index: 8; }
   /* 速记 · 发送栏固定页面底部，仅消息区上下滚动 */
   /* 需求5：合并栏与发送行整块吸底（替代原 .memo-chat-input 单独吸底，保证选中时两者一起固定） */
   .memo-chat-foot { position: -webkit-sticky; position: sticky; bottom: 0; z-index: 5; background: var(--panel); padding-bottom: env(safe-area-inset-bottom); }
