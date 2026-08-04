@@ -5321,10 +5321,13 @@ function renderMemoSchedule() {
     + '<button class="memo-schedule-check" data-action="memo-schedule-toggle" data-id="' + escAttr(t.id) + '" aria-checked="' + (t.done ? 'true' : 'false') + '"><span class="ck"></span></button>'
     + (editing
         ? '<input class="memo-schedule-edit-input" id="memoScheduleEditInput" data-id="' + escAttr(t.id) + '" value="' + escAttr(t.text) + '">'
-        : '<span class="memo-schedule-text" data-action="memo-schedule-edit" data-id="' + escAttr(t.id) + '">' + escHtml(t.text) + '</span>')
+        : '<span class="memo-schedule-text" data-id="' + escAttr(t.id) + '">' + escHtml(t.text) + '</span>')
+    + '<div class="memo-schedule-actions">'
+    + '<button class="memo-schedule-edit-btn" data-action="memo-schedule-edit" data-id="' + escAttr(t.id) + '" title="编辑">✎</button>'
     + '<button class="memo-schedule-copy" data-action="memo-schedule-copy" data-id="' + escAttr(t.id) + '" title="复制">⧉</button>'
     + '<button class="memo-schedule-move" data-action="memo-schedule-move" data-id="' + escAttr(t.id) + '" title="移动">→</button>'
-    + '<button class="memo-schedule-del" data-action="memo-schedule-del" data-id="' + escAttr(t.id) + '">×</button>'
+    + '<button class="memo-schedule-del" data-action="memo-schedule-del" data-id="' + escAttr(t.id) + '" title="删除">×</button>'
+    + '</div>'
     + '</div>';
   }).join('') : '<div class="memo-schedule-empty">暂无任务，添加一条吧✨</div>';
   $('content').innerHTML =
@@ -5346,6 +5349,7 @@ function renderMemoSchedule() {
     + '<div class="memo-schedule-cal-wrap">' + memoScheduleCalInner() + '</div>'
     + '</div></div>';
   initScheduleDrag();
+  bindSchedulePopup();
   if (memoScheduleEditingId) {
     const _inp = $('memoScheduleEditInput');
     if (_inp) { _inp.focus(); _inp.select(); _inp.addEventListener('blur', memoScheduleCommitEdit); }
@@ -5370,6 +5374,29 @@ function memoScheduleCommitEdit() {
   if (task && inp) { const v = inp.value.trim(); if (v) { task.text = v; save(); } }
   memoScheduleEditingId = null;
   renderMemoSchedule();
+}
+/* 今日日程：点击日程条在上方弹出操作气泡（编辑/复制/移动/删除），点其它地方自动收起 */
+function bindSchedulePopup() {
+  const list = $('memoScheduleList');
+  if (!list) return;
+  list.querySelectorAll('.memo-schedule-item').forEach(item => {
+    item.addEventListener('click', (e) => {
+      if (e.target.closest('.memo-schedule-grip')) return;       // 拖拽手柄
+      if (e.target.closest('.memo-schedule-check')) return;       // 勾选
+      if (e.target.closest('.memo-schedule-actions')) return;     // 气泡内按钮（交由全局 handleClick 处理）
+      if (e.target.closest('.memo-schedule-edit-input')) return;  // 编辑输入框
+      document.querySelectorAll('.memo-schedule-item.popup-open').forEach(o => { if (o !== item) o.classList.remove('popup-open'); });
+      item.classList.toggle('popup-open');
+    });
+  });
+  if (!window.__schedulePopupCloseBound) {
+    window.__schedulePopupCloseBound = true;
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.memo-schedule-item')) {
+        document.querySelectorAll('.memo-schedule-item.popup-open').forEach(o => o.classList.remove('popup-open'));
+      }
+    });
+  }
 }
 /* 拖拽排序：把当前日期的任务按新顺序（ids）写回全局数组，保持该日期块内顺序、不动其他日期 */
 function reorderScheduleTasks(ids) {

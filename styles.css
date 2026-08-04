@@ -1751,6 +1751,7 @@ body:has(.memo-chat) .topbar { position: sticky; top: 0; z-index: 20; }
 .memo-schedule-add:hover { background: #8bb88c; }
 .memo-schedule-list { display: flex; flex-direction: column; gap: 10px; }
 .memo-schedule-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1808,17 +1809,11 @@ body:has(.memo-chat) .topbar { position: sticky; top: 0; z-index: 20; }
 }
 .memo-schedule-text { flex: 1; font-size: 15px; color: #768de7; font-weight: 700; word-break: break-word; }
 .memo-schedule-del {
-  width: 24px;
-  height: 24px;
-  border: none;
-  background: transparent;
-  color: var(--text-3);
-  font-size: 18px;
-  cursor: pointer;
-  border-radius: 6px;
-  flex: 0 0 24px;
+  width: 30px; height: 30px; border: none; background: transparent;
+  color: #243b53; font-size: 18px; cursor: pointer; border-radius: 8px; flex: 0 0 30px;
+  display: flex; align-items: center; justify-content: center;
 }
-.memo-schedule-del:hover { background: #fee2e2; color: #e11d48; }
+.memo-schedule-del:hover { background: #f4a9b8; color: #fff; }
 .memo-schedule-empty {
   text-align: center;
   color: var(--text-3);
@@ -1826,14 +1821,39 @@ body:has(.memo-chat) .topbar { position: sticky; top: 0; z-index: 20; }
   padding: 24px 0;
   font-style: italic;
 }
-/* 今日日程：单条复制/移动/编辑 */
-.memo-schedule-copy, .memo-schedule-move {
-  width: 26px; height: 26px; border: none; background: transparent;
-  color: var(--text-3); font-size: 16px; cursor: pointer; border-radius: 6px; flex: 0 0 26px;
+/* 今日日程：操作气泡（点击日程条在上方弹出，编辑/复制/移动/删除横排） */
+.memo-schedule-actions {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 8px;
+  display: none;
+  flex-direction: row;
+  align-items: center;
+  gap: 2px;
+  background: #B3C6DD;
+  border-radius: 12px;
+  padding: 6px 8px;
+  box-shadow: 0 6px 18px rgba(0,0,0,.18);
+  z-index: 20;
+}
+.memo-schedule-actions::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  right: 16px;
+  border: 7px solid transparent;
+  border-top-color: #B3C6DD;
+}
+.memo-schedule-item.popup-open .memo-schedule-actions { display: flex; }
+.memo-schedule-edit-btn, .memo-schedule-copy, .memo-schedule-move {
+  width: 30px; height: 30px; border: none; background: transparent;
+  color: #F9E3D9; font-size: 16px; cursor: pointer; border-radius: 8px; flex: 0 0 30px;
   display: flex; align-items: center; justify-content: center;
 }
-.memo-schedule-copy:hover { background: #e6f0ff; color: #3b82f6; }
-.memo-schedule-move:hover { background: #e9f7ef; color: #16a34a; }
+/* 气泡内 4 个图标统一用浅色（含删除 ×，仅限气泡内，不影响别处） */
+.memo-schedule-actions .memo-schedule-del { color: #F9E3D9; }
+.memo-schedule-edit-btn:hover, .memo-schedule-copy:hover, .memo-schedule-move:hover { background: rgba(255,255,255,.55); }
+.memo-schedule-actions .memo-schedule-del:hover { background: rgba(255,255,255,.55); color: #F9E3D9; }
 .memo-schedule-edit-input {
   flex: 1; min-width: 0; font-size: 15px; color: #768de7; font-weight: 700;
   border: 2px solid var(--brand); border-radius: 8px; padding: 4px 8px; outline: none; background: var(--panel);
