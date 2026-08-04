@@ -1024,6 +1024,10 @@ body {
   font-size: 16px; font-weight: 700; margin-bottom: 16px;
 }
 .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+/* 云端同步：上传到云端单独整行置顶 + 背景填色 */
+.sync-upload-row { margin: 2px 0 0; }
+.sync-upload-btn { width: 100%; background: var(--pink); color: #fff; font-weight: 600; font-size: 15px; padding: 13px; border: none; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,.14); }
+.sync-upload-btn:hover { background: var(--pink-deep); }
 .field-row { display: flex; gap: 12px; }
 .field-row .field { flex: 1; }
 .field-hint { font-size: 12px; color: var(--text-3); margin-top: 4px; line-height: 1.5; }
@@ -1189,6 +1193,7 @@ body {
 /* 只读模式：食材/调味料按屏幕宽度自动分列（窄屏单列，宽屏多列） */
 .view-list.cols { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
 .view-item, .view-step { font-size: 14px; padding: 4px 0; border-bottom: 1px dashed var(--border); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.view-form { font-size: 12px; color: var(--text-3); }
 /* 步骤 1234 编号 */
 .view-step .step-no { flex: 0 0 auto; min-width: 22px; height: 22px; line-height: 22px; text-align: center; border-radius: 50%; background: var(--accent); color: #fff; font-size: 12px; font-weight: 600; }
 .view-step .step-text { flex: 1 1 auto;  white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; }
@@ -1367,6 +1372,11 @@ body {
 .memo-edit-head .memo-title-input { flex: 1; margin-bottom: 0; }
 .memo-star-btn { border: 1px solid var(--border); background: var(--panel); color: var(--text-2); border-radius: 10px; padding: 0 14px; height: 40px; font-size: 14px; cursor: pointer; white-space: nowrap; }
 .memo-star-btn.on { color: #f5b301; border-color: #f5b301; background: #fef3c7; }
+.memo-title-clear {
+  flex: 0 0 auto; width: 32px; height: 32px; border: none; background: transparent;
+  color: var(--text-3); font-size: 16px; cursor: pointer; border-radius: 8px; line-height: 1;
+}
+.memo-title-clear:hover { background: #fee2e2; color: #e11d48; }
 .memo-tagchips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; color: var(--text-3); margin-bottom: 10px; }
 .memo-tagchips-label { color: var(--text-2); font-weight: 600; }
 .memo-tagchips-empty { color: var(--text-3); }
@@ -1813,6 +1823,26 @@ body:has(.memo-chat) .topbar { position: sticky; top: 0; z-index: 20; }
   font-size: 14px;
   padding: 24px 0;
   font-style: italic;
+}
+/* 今日日程：单条复制/移动/编辑 */
+.memo-schedule-copy, .memo-schedule-move {
+  width: 26px; height: 26px; border: none; background: transparent;
+  color: var(--text-3); font-size: 16px; cursor: pointer; border-radius: 6px; flex: 0 0 26px;
+  display: flex; align-items: center; justify-content: center;
+}
+.memo-schedule-copy:hover { background: #e6f0ff; color: #3b82f6; }
+.memo-schedule-move:hover { background: #e9f7ef; color: #16a34a; }
+.memo-schedule-edit-input {
+  flex: 1; min-width: 0; font-size: 15px; color: #768de7; font-weight: 700;
+  border: 2px solid var(--brand); border-radius: 8px; padding: 4px 8px; outline: none; background: var(--panel);
+}
+.memo-schedule-paste-hint {
+  margin: 10px 0 0; padding: 10px 12px; font-size: 13px; color: #16a34a;
+  background: #e9f7ef; border: 1px dashed #16a34a; border-radius: 10px;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.memo-schedule-paste-cancel {
+  border: none; background: transparent; color: #16a34a; text-decoration: underline; cursor: pointer; font-size: 13px;
 }
 
 /* 窄屏适配：极窄设备下进一步收缩字号/内边距，保证标题行与输入行不换行、不溢出 */

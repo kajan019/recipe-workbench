@@ -647,7 +647,6 @@ function openSyncModal() {
           <div class="field">
             <div class="field-label">GitHub 私人令牌 (PAT)</div>
             <input class="input" id="syncToken" type="password" placeholder="ghp_... 或 github_pat_..." value="${escAttr(c.token || '')}">
-            <div class="field-hint">建议用 Fine-grained token，仅授予目标私有仓库的「Contents: Read/Write」。令牌只存于本机浏览器，不上传任何服务器。</div>
           </div>
           <div class="field">
             <div class="field-label">仓库 (owner/repo)</div>
@@ -657,13 +656,15 @@ function openSyncModal() {
             <div class="field"><div class="field-label">分支</div><input class="input" id="syncBranch" placeholder="main" value="${escAttr(c.branch || 'main')}"></div>
             <div class="field"><div class="field-label">文件路径</div><input class="input" id="syncPath" placeholder="data.json" value="${escAttr(c.path || 'data.json')}"></div>
           </div>
-          <label class="chk"><input type="checkbox" id="syncAuto" ${c.auto ? 'checked' : ''}> 自动上传已关闭：改动不会自动传云端，请手动点「☁ 上传到云端」；打开工作台仍会自动从云端拉取</label>
+          <label class="chk"><input type="checkbox" id="syncAuto" ${c.auto ? 'checked' : ''}> 打开则每次刷新自动从云端拉取（自动上传已关闭，请手动上传到云端。）</label>
           <div class="sync-status" id="syncStatus"></div>
+        </div>
+        <div class="sync-upload-row">
+          <button class="btn sync-upload-btn" data-action="sync-push">☁ 上传到云端</button>
         </div>
         <div class="modal-actions">
           <button class="btn" data-action="sync-test">测试连接</button>
           <button class="btn" data-action="sync-pull">从云端拉取</button>
-          <button class="btn" data-action="sync-push">☁ 上传到云端</button>
           <button class="btn primary" data-action="sync-save">保存设置</button>
         </div>
       </div>
@@ -734,7 +735,7 @@ function toast(msg) {
 }
 function showImage(src) {
   $('modalRoot').innerHTML =
-    `<div class="modal-mask" data-action="modal-close">
+    `<div class="modal-mask" data-action="modal-close" data-imgclose="1">
        <img class="modal-img" src="${src}">
        <button class="modal-close" data-action="modal-close">×</button>
      </div>`;
@@ -1285,6 +1286,19 @@ function recipeMatches(r, q) {
   ].filter(Boolean).join(' ').toLowerCase();
   return hay.includes(q);
 }
+/* 菜谱库列表滚动位置记忆：进入只读详情页前记录，返回列表时还原（详见「详情页滚动保持」需求） */
+let _libScrollTop = 0;
+let _libScrollWin = 0;
+function restoreLibScroll() {
+  const c = $('content');
+  const y = _libScrollTop || 0;
+  const wy = _libScrollWin || 0;
+  const apply = () => { if (c) c.scrollTop = y; window.scrollTo(0, wy); };
+  apply();
+  requestAnimationFrame(() => { apply(); requestAnimationFrame(() => { apply(); }); });
+  setTimeout(apply, 60);
+  setTimeout(apply, 200);
+}
 function renderLibrary() {
   setChrome('绵绵的工作台', `<button class="btn primary" data-action="open-editor-new">＋ 新增菜谱</button>`);
   const q = (state.search || '').trim();
@@ -1540,9 +1554,9 @@ function viewPrepHTML(r, factor) {
       let qty = m.qty != null ? m.qty : (mat && mat.amount != null ? scaleAmt(mat.amount, factor) : null);
       const unit = m.unit || (mat && mat.unit) || '';
       const amtText = (qty != null && qty !== '') ? (qty + unit) : (qty == null ? '适量' : '');
-      const form = m.form ? `（${m.form}）` : '';
-      const text = [name, amtText, form].filter(Boolean).join(' ');
-      return `<div class="view-item">${escHtml(text)}</div>`;
+      const form = m.form ? `<span class="view-form">（${escHtml(m.form)}）</span>` : '';
+      const text = [name, amtText].filter(Boolean).join(' ');
+      return `<div class="view-item">${escHtml(text)}${form}</div>`;
     }).join('');
     const imgHTML = g.img ? `<div class="v-thumb" style="background-image:url('${escAttr(g.img)}')" data-action="enlarge-prep-img" data-gid="${escAttr(g.id)}"></div>` : '';
     return `<div class="view-group"><div class="view-group-title"><span class="vgt-pill">${escHtml(g.title || '备菜')}</span>${imgHTML}</div><div class="view-list cols">${members || '<div class="view-empty">（无）</div>'}</div></div>`;
@@ -1941,7 +1955,7 @@ function purchaseListHTML() {
       <button class="btn sm" data-action="p-selall">☑ 全部勾选</button>
       <button class="btn sm" data-action="p-clear">☐ 清空勾选</button>
       <button class="btn sm" data-action="p-copy">📄 复制清单</button>
-      <button class="btn sm" data-action="p-export">⬇ 导出纯文本</button>
+      <button class="btn sm" data-action="p-export">📝 导出到我的备忘录</button>
       <button class="btn sm ghost" data-action="p-recompute">↻ 重新汇总</button>
     </div>
     <div class="purchase-cols">
@@ -1984,6 +1998,30 @@ function purchaseText() {
   parts.push(`【食材清单】\n${fmt(L.ingredients) || '（空）'}`);
   parts.push(`【调味料清单】\n${fmt(L.seasonings) || '（空）'}`);
   return parts.join('\n\n');
+}
+
+/* 点菜采购 → 导出到我的备忘录：把当前采购清单生成一条备忘录笔记
+   笔记标题「食材清单—日期」；大标签（一级分类）=采购清单、小标签（二级分类）=点菜采购导出；
+   正文：菜谱名无序列表 + 食材/调味料待办 */
+function exportPurchaseToMemo() {
+  const L = state.purchaseList;
+  if (!L) { toast('请先勾选菜谱生成采购清单'); return; }
+  const date = fmtDate(Date.now());
+  const recipeNames = state.purchaseSelected.map(id => getRecipe(id)).filter(Boolean).map(r => r.name || '未命名菜谱');
+  const fmtRow = (r) => (r.name || '') + (r.qty != null ? ' ' + r.qty + (r.unit || '') : '');
+  let body = '';
+  if (recipeNames.length) {
+    body += '<p>【菜谱名称】</p>';
+    body += '<ul>' + recipeNames.map(n => '<li data-list="bullet">' + escHtml(n) + '</li>').join('') + '</ul>';
+  }
+  body += '<p>【食材】</p>';
+  body += '<ul>' + (L.ingredients.length ? L.ingredients.map(r => '<li data-list="unchecked">' + escHtml(fmtRow(r)) + '</li>').join('') : '<li data-list="unchecked">（空）</li>') + '</ul>';
+  body += '<p>【调味料】</p>';
+  body += '<ul>' + (L.seasonings.length ? L.seasonings.map(r => '<li data-list="unchecked">' + escHtml(fmtRow(r)) + '</li>').join('') : '<li data-list="unchecked">（空）</li>') + '</ul>';
+  const minOrd = state.memoNotes.reduce((m, x) => Math.min(m, (typeof x.ord === 'number' ? x.ord : 0)), 0);
+  state.memoNotes.push({ id: uid(), title: '食材清单—' + date, body, cat: '采购清单', sub: '点菜采购导出', fav: false, ord: minOrd - 1, createdAt: Date.now(), updatedAt: Date.now() });
+  save();
+  toast('已导出到我的备忘录');
 }
 
 /* ---------------- 分类筛选 ---------------- */
@@ -2901,7 +2939,8 @@ async function handleClick(e) {
     // 点到弹窗内部内容（如裁剪框）不关闭，否则拖拽裁剪框会被误关。
     if (e.target === t || e.target.classList.contains('modal-img')) {
       if (cropCtx) { const s = cropCtx.onSkip; const c = cropCtx._cleanup; cropCtx = null; if (c) c(); if (s) s(); }
-      closeModal();
+      if (t.closest('[data-imgclose]')) requestAnimationFrame(() => closeModal());  // 菜谱只读插图弹窗：关弹窗延后一帧，规避 iOS 同一下点击移除 fixed 遮罩后吞掉下一击
+      else closeModal();
     }
     return;
   }
@@ -2915,8 +2954,23 @@ async function handleClick(e) {
     case 'filter-search-clear': state.filterSearch = ''; renderFilter(); break;
     case 'open-editor-new': openEditor(null); break;
     case 'goto-filter': gotoFilterCat(t.dataset.cat); break;
-    case 'view-recipe': renderRecipeView(t.dataset.id); break;
-    case 'back-library': state.viewId = null; renderLibrary(); break;
+    case 'view-recipe': {
+      const c = $('content');
+      _libScrollTop = c ? c.scrollTop : 0;
+      _libScrollWin = window.scrollY || 0;
+      renderRecipeView(t.dataset.id);
+      // 进入只读详情页：双容器都强制置顶（桌面 #content 滚 / 手机 window 滚），多兜底覆盖异步布局
+      const topNow = () => { if (c) c.scrollTop = 0; window.scrollTo(0, 0); };
+      topNow();
+      requestAnimationFrame(() => { topNow(); requestAnimationFrame(() => { topNow(); }); });
+      setTimeout(topNow, 60);
+      break;
+    }
+    case 'back-library': {
+      state.viewId = null; renderLibrary();
+      restoreLibScroll();       // 返回列表：保持进入详情页前的滚动位置
+      break;
+    }
     case 'edit-recipe': openEditor(t.dataset.id); break;
     /* 收藏夹 */
     case 'fav-add': openFavForm('add'); break;
@@ -3221,7 +3275,7 @@ async function handleClick(e) {
     case 'p-selall': state.purchaseList.ingredients.concat(state.purchaseList.seasonings).forEach(r => r.done = true); renderPurchase(); break;
     case 'p-clear': state.purchaseList.ingredients.concat(state.purchaseList.seasonings).forEach(r => r.done = false); renderPurchase(); break;
     case 'p-copy': copyText(purchaseText()); break;
-    case 'p-export': downloadText('采购清单.txt', purchaseText()); break;
+    case 'p-export': exportPurchaseToMemo(); break;
     case 'merge-same': mergeSameName(t.dataset.col); state.purchaseMergeSrc = null; renderPurchase(); break;
 
     // 筛选
@@ -3443,6 +3497,11 @@ async function handleClick(e) {
       state.memoEditId = null; state.memoExpandId = null; memoEditBackup = null; memoEditIsNew = false; memoDirty = false;
       save(); renderMemo(); break;
     }
+    case 'memo-title-clear': {
+      const el = $('memoTitle');
+      if (el) { el.value = ''; el.dispatchEvent(new Event('input')); el.focus(); }
+      break;
+    }
     case 'memo-cancel': {
       if (memoEditIsNew && state.memoEditId) {
         state.memoNotes = state.memoNotes.filter(n => n.id !== state.memoEditId);
@@ -3548,7 +3607,23 @@ async function handleClick(e) {
     /* 今日日程（月历改为内嵌，不再弹窗） */
     case 'memo-schedule-prev-month': { memoScheduleCalMonth.month--; if (memoScheduleCalMonth.month < 0) { memoScheduleCalMonth.month = 11; memoScheduleCalMonth.year--; } renderMemoSchedule(); break; }
     case 'memo-schedule-next-month': { memoScheduleCalMonth.month++; if (memoScheduleCalMonth.month > 11) { memoScheduleCalMonth.month = 0; memoScheduleCalMonth.year++; } renderMemoSchedule(); break; }
-    case 'memo-schedule-pick-date': { state.memoScheduleDate = t.dataset.date; memoScheduleCalMonth = null; renderMemoSchedule(); break; }
+    case 'memo-schedule-pick-date': {
+      state.memoScheduleDate = t.dataset.date;
+      if (scheduleClipboard) {
+        state.memoScheduleTasks.push({ id: uid(), date: t.dataset.date, text: scheduleClipboard.text, done: false, createdAt: Date.now() });
+        let verb = '复制';
+        if (scheduleClipboard.mode === 'move') {
+          state.memoScheduleTasks = state.memoScheduleTasks.filter(x => x.id !== scheduleClipboard.id);
+          verb = '移动';
+        }
+        scheduleClipboard = null;
+        save();
+        toast('已' + verb + '到 ' + t.dataset.date);
+      }
+      memoScheduleCalMonth = null;
+      renderMemoSchedule();
+      break;
+    }
     case 'memo-schedule-add': {
       const inp = $('memoScheduleInput');
       const text = inp ? inp.value.trim() : '';
@@ -3567,6 +3642,18 @@ async function handleClick(e) {
       state.memoScheduleTasks = state.memoScheduleTasks.filter(x => x.id !== id);
       save(); renderMemoSchedule(); break;
     }
+    case 'memo-schedule-edit': { memoScheduleEditingId = t.dataset.id; renderMemoSchedule(); break; }
+    case 'memo-schedule-copy': {
+      const task = state.memoScheduleTasks.find(x => x.id === t.dataset.id);
+      if (task) { scheduleClipboard = { text: task.text, mode: 'copy' }; toast('已复制，点日历日期粘贴'); renderMemoSchedule(); }
+      break;
+    }
+    case 'memo-schedule-move': {
+      const task = state.memoScheduleTasks.find(x => x.id === t.dataset.id);
+      if (task) { scheduleClipboard = { text: task.text, mode: 'move', id: task.id }; toast('已移动，点日历日期粘贴'); renderMemoSchedule(); }
+      break;
+    }
+    case 'memo-schedule-paste-cancel': { scheduleClipboard = null; renderMemoSchedule(); break; }
     /* 速记（聊天式） */
     case 'memo-chat-send': memoChatSend(); break;
     case 'memo-chat-img': memoPickImage((src) => { state.memoChat.push({ id: uid(), type: 'image', text: '', img: src, createdAt: Date.now() }); save(); renderMemoChat(); }); break;
@@ -3663,6 +3750,11 @@ function handleKeydown(e) {
     if (!text) return;
     state.memoScheduleTasks.push({ id: uid(), date: state.memoScheduleDate || fmtDate(Date.now()), text, done: false, createdAt: Date.now() });
     save(); renderMemoSchedule();
+  }
+  if (e.key === 'Enter' && t.id === 'memoScheduleEditInput') {
+    if (e.isComposing) return;
+    e.preventDefault();
+    memoScheduleCommitEdit();
   }
 }
 /* [v165] 菜谱编辑器多行文本框自动增高：高度随内容撑开、禁用滑块、超宽自动换行 */
@@ -4819,6 +4911,33 @@ async function memoQuillImageHandler() {
   });
 }
 
+/* 备忘录·手机端列表空行中文/标点无法输入修复（v183）
+   现象：手机端在待办/有序/无序列表行按回车换出新行后，光标卡在列表符号(.ql-ui)之后；
+   手机输入法要打拼音需"往前读一句上下文"，但该只读符号挡住了读取 → 中文与中文标点打不出
+   （英文/数字/emoji 不需要前文，照常可打；桌面端走另一通道，正常）。
+   修法：仅在手机端 + 空列表行 + 光标确实落在符号后时，把原生光标挪到符号前。
+   红线：只调整光标位置，不碰 .ql-ui、不改任何样式、不动待办勾选；桌面端一行不动。 */
+var __memoIsMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+function memoFixListCursorMobile() {
+  if (!__memoIsMobile || typeof memoQuill === 'undefined' || !memoQuill) return;
+  var range = memoQuill.getSelection();
+  if (!range || range.length) return;                 // 仅处理折叠光标（无选中）
+  var pair = memoQuill.getLine(range.index);
+  var line = pair && pair[0];
+  if (!line || !line.domNode || line.domNode.nodeName !== 'LI') return;
+  if (line.length() > 1) return;                      // 行内已有内容则不处理（只在空行触发）
+  var li = line.domNode;
+  if (!li.querySelector('.ql-ui')) return;            // 仅列表行（待办/有序/无序带符号）
+  var sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return;
+  if (sel.anchorNode !== li || sel.anchorOffset < 1) return;  // 仅「光标卡在符号后」
+  var rg = document.createRange();
+  rg.setStart(li, 0);                                 // 把光标移到符号前
+  rg.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(rg);
+}
+
 function renderMemoEditor() {
   closeMemoColorPopover();
   memoDirty = false;   // 进入编辑器清零：仅当用户真正改动并保存，才刷新时间
@@ -4836,8 +4955,9 @@ function renderMemoEditor() {
   const smallChips = allSubs.map(t => '<button class="memo-tagchip sub" data-action="memo-pick-sub" data-tag="' + escAttr(t) + '">#' + escHtml(t) + '</button>').join('');
   $('content').innerHTML =
     '<div class="memo-edit">'
-    + '<div class="memo-edit-head">'
+    +     '<div class="memo-edit-head">'
     + '<input class="memo-title-input" id="memoTitle" placeholder="标题" value="' + escAttr(n.title) + '">'
+    + '<button class="memo-title-clear" data-action="memo-title-clear" title="清空标题" aria-label="清空标题">✕</button>'
     + '<button class="memo-star-btn' + (n.fav ? ' on' : '') + '" data-action="memo-fav-toggle-edit" title="收藏">' + (n.fav ? '★ 已收藏' : '☆ 收藏') + '</button>'
     + '</div>'
     + '<div class="memo-tags-row">'
@@ -4947,6 +5067,10 @@ function renderMemoEditor() {
     save();
     memoDirty = true;   // 标记为已编辑；时间由 memo-done 在保存时统一刷新（避免仅打开/查看就刷新时间）
   });
+  /* v183：手机端列表空行中文输入修复——换行后把卡在符号后的光标挪到符号前。
+     用双 rAF 等 Quill 完成 DOM 布局后再检查；selection-change 作即时补位，两者均经内部守卫不会误伤。 */
+  memoQuill.on('selection-change', memoFixListCursorMobile);
+  memoQuill.on('text-change', () => { requestAnimationFrame(() => requestAnimationFrame(memoFixListCursorMobile)); });
   /* 第3项：手机端编辑区左右滑动切换段落缩进（右滑+1级，左滑退1级） */
   const _ed = memoQuill.root;
   let _sx = 0, _sy = 0, _sw = false, _hmoved = false;
@@ -5083,6 +5207,8 @@ function memoChatRefresh() {
 
 /* ---------- 备忘录：今日日程 ---------- */
 let memoScheduleCalMonth = null; // 日历弹窗当前显示的 {year,month}
+let memoScheduleEditingId = null; // 当前正在内联编辑的日程 id（null=非编辑态）
+let scheduleClipboard = null;     // 复制/移动暂存：{ text, mode:'copy'|'move', id? }
 function memoScheduleTasksFor(date) {
   /* 不再按 createdAt 排序，保持数组顺序（拖拽重排后顺序即数组顺序） */
   return state.memoScheduleTasks.filter(t => t.date === date);
@@ -5148,14 +5274,19 @@ function renderMemoSchedule() {
   const tasks = memoScheduleTasksFor(date);
   const doneCount = tasks.filter(t => t.done).length;
   const total = tasks.length;
-  const listHTML = tasks.length ? tasks.map(t =>
-    '<div class="memo-schedule-item ' + (t.done ? 'done' : '') + '" data-id="' + escAttr(t.id) + '">'
+  const listHTML = tasks.length ? tasks.map(t => {
+    const editing = (t.id === memoScheduleEditingId);
+    return '<div class="memo-schedule-item ' + (t.done ? 'done' : '') + '" data-id="' + escAttr(t.id) + '">'
     + '<span class="memo-schedule-grip" aria-label="拖拽排序">⋮</span>'
     + '<button class="memo-schedule-check" data-action="memo-schedule-toggle" data-id="' + escAttr(t.id) + '" aria-checked="' + (t.done ? 'true' : 'false') + '"><span class="ck"></span></button>'
-    + '<span class="memo-schedule-text">' + escHtml(t.text) + '</span>'
+    + (editing
+        ? '<input class="memo-schedule-edit-input" id="memoScheduleEditInput" data-id="' + escAttr(t.id) + '" value="' + escAttr(t.text) + '">'
+        : '<span class="memo-schedule-text" data-action="memo-schedule-edit" data-id="' + escAttr(t.id) + '">' + escHtml(t.text) + '</span>')
+    + '<button class="memo-schedule-copy" data-action="memo-schedule-copy" data-id="' + escAttr(t.id) + '" title="复制">⧉</button>'
+    + '<button class="memo-schedule-move" data-action="memo-schedule-move" data-id="' + escAttr(t.id) + '" title="移动">→</button>'
     + '<button class="memo-schedule-del" data-action="memo-schedule-del" data-id="' + escAttr(t.id) + '">×</button>'
-    + '</div>'
-  ).join('') : '<div class="memo-schedule-empty">暂无任务，添加一条吧✨</div>';
+    + '</div>';
+  }).join('') : '<div class="memo-schedule-empty">暂无任务，添加一条吧✨</div>';
   $('content').innerHTML =
     '<div class="memo-schedule">'
     + '<div class="memo-schedule-card">'
@@ -5171,9 +5302,14 @@ function renderMemoSchedule() {
     + '<button class="memo-schedule-add" data-action="memo-schedule-add">+ 添加</button>'
     + '</div>'
     + '<div class="memo-schedule-list" id="memoScheduleList">' + listHTML + '</div>'
+    + (scheduleClipboard ? '<div class="memo-schedule-paste-hint">📋 已' + (scheduleClipboard.mode === 'move' ? '移动' : '复制') + '，点日历日期粘贴到该日 · <button class="memo-schedule-paste-cancel" data-action="memo-schedule-paste-cancel">取消</button></div>' : '')
     + '<div class="memo-schedule-cal-wrap">' + memoScheduleCalInner() + '</div>'
     + '</div></div>';
   initScheduleDrag();
+  if (memoScheduleEditingId) {
+    const _inp = $('memoScheduleEditInput');
+    if (_inp) { _inp.focus(); _inp.select(); _inp.addEventListener('blur', memoScheduleCommitEdit); }
+  }
   /* 进入「今日日程」默认滑块置顶：覆盖 window/#content/.memo-schedule 候选滚动容器。
      同步先置一次，再用双 requestAnimationFrame 等月历渲染/布局稳定后再置顶，
      矮屏/窄屏内容更高时也从最上方开始（不继承上一个视图的滚动位置）。 */
@@ -5184,6 +5320,16 @@ function renderMemoSchedule() {
   };
   memoSchedScrollTop();
   requestAnimationFrame(() => requestAnimationFrame(memoSchedScrollTop));
+}
+/* 今日日程：内联编辑提交（失焦/回车触发） */
+function memoScheduleCommitEdit() {
+  const id = memoScheduleEditingId;
+  if (!id) return;
+  const inp = $('memoScheduleEditInput');
+  const task = state.memoScheduleTasks.find(t => t.id === id);
+  if (task && inp) { const v = inp.value.trim(); if (v) { task.text = v; save(); } }
+  memoScheduleEditingId = null;
+  renderMemoSchedule();
 }
 /* 拖拽排序：把当前日期的任务按新顺序（ids）写回全局数组，保持该日期块内顺序、不动其他日期 */
 function reorderScheduleTasks(ids) {
