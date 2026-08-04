@@ -1131,8 +1131,10 @@ body {
 }
 .ritem.note { background: var(--amber-soft); border-style: dashed; border-color: #e8c98a; }
 .rline { display: flex; align-items: flex-start; gap: 8px; }
-.grip { cursor: grab; color: var(--text-3); flex: 0 0 auto; padding-top: 7px; user-select: none; }
-.grip:active { cursor: grabbing; }
+  .grip { cursor: grab; color: var(--text-3); flex: 0 0 auto; padding: 7px 7px 7px 4px; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: none; }
+  .grip:active { cursor: grabbing; }
+  .ritem.dragging { opacity: .65; box-shadow: 0 6px 16px rgba(0,0,0,.18); }
+  .ritem-placeholder { border: 2px dashed var(--brand); border-radius: 10px; background: rgba(168,125,235,.08); box-sizing: border-box; }
 .idx { flex: 0 0 auto; width: 22px; text-align: center; color: var(--text-3); font-size: 12px; padding-top: 8px; }
 .note-idx { width: auto; padding-top: 7px; }
 .rname {

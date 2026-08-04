@@ -277,7 +277,6 @@ let state = {
   recipeTrash: [],          // 菜谱回收站
   memoTrash: [],            // 备忘录回收站
 };
-let dragSrc = null;
 let nutAgg = null;       // 最近一次营养聚合结果（供点击宏量元素查看 Top3 来源）
 let nutNoFoodList = [];  // 最近一次测算中「查不到营养数据」的食材名（供底部整宽提示区）
 
@@ -1543,12 +1542,22 @@ function refreshViewScaled(r) {
   const sea = $('vsec-seasonings'); if (sea) sea.innerHTML = `<h3>调味料</h3>${viewListHTML(r.sections.seasonings, true, f)}`;
   const prep = $('vsec-prep'); if (prep) prep.innerHTML = `<h3>备菜</h3>${viewPrepHTML(r, f)}`;
 }
+/* 备菜组成员按 [食材 + 调味料] 主列表顺序排列，使「拖拽重排用料」后备菜区自动跟随新顺序 */
+function prepMembersSorted(group, r) {
+  const master = (r.sections.ingredients || []).concat(r.sections.seasonings || []);
+  const pos = new Map(master.map((x, i) => [x.id, i]));
+  return group.members.slice().sort((a, b) => {
+    const ia = pos.has(a.refId) ? pos.get(a.refId) : 1e9;
+    const ib = pos.has(b.refId) ? pos.get(b.refId) : 1e9;
+    return ia - ib;
+  });
+}
 function viewPrepHTML(r, factor) {
   factor = factor == null ? 1 : factor;
   const groups = r.sections.prep || [];
   if (!groups.length) return `<div class="view-empty">（无）</div>`;
   return `<div class="view-list">` + groups.map(g => {
-    const members = g.members.map(m => {
+    const members = prepMembersSorted(g, r).map(m => {
       const mat = findMaterialByRefIn(r, m.refId);
       const name = mat ? (mat.name || '未命名') : '（已删除用料）';
       let qty = m.qty != null ? m.qty : (mat && mat.amount != null ? scaleAmt(mat.amount, factor) : null);
@@ -1792,7 +1801,7 @@ function prepSectionHTML() {
   return `${list}<div class="add-row"><button class="add-btn" data-action="add-prep-group">＋ 新增备菜组</button></div>`;
 }
 function prepGroupHTML(g) {
-  const members = g.members.map(m => {
+  const members = prepMembersSorted(g, state.editing).map(m => {
     const mat = findMaterialByRef(m.refId);
     const label = mat ? matLabel(mat) : '（已删除用料）';
     const srcQty = mat && mat.amount != null ? mat.amount : '';
@@ -3931,54 +3940,86 @@ function requestDiscardEdit() {
     </div>`;
 }
 
-/* ---------------- 拖拽排序 ---------------- */
-function cleanupDrag() {
-  document.querySelectorAll('.ritem.drop-target,.ritem.dragging').forEach(x => x.classList.remove('drop-target', 'dragging'));
-  dragSrc = null;
-}
+/* ---------------- 拖拽排序（指针事件：手机 + 鼠标通用） ---------------- */
 function initDrag() {
-  if ('ontouchstart' in window || navigator.maxTouchPoints > 0) return; // 触摸设备（手机/平板）不支持原生拖拽且会干扰点击，排序改用 ↑↓ 按钮
   const content = $('content');
-  content.addEventListener('mousedown', (e) => {
+  if (content._recipeRowDrag) return;
+  content._recipeRowDrag = true;
+  let dragEl = null, started = false, ph = null, startX = 0, startY = 0, grabX = 0, grabY = 0, listEl = null;
+  content.addEventListener('pointerdown', onDown);
+  function onDown(e) {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;     // 仅左键
     const grip = e.target.closest('.grip');
-    if (grip) { const row = grip.closest('[data-row]'); if (row) row.setAttribute('draggable', 'true'); }
-  });
-  document.addEventListener('mouseup', () => {
-    document.querySelectorAll('[data-row][draggable="true"]').forEach(b => b.removeAttribute('draggable'));
-  });
-  content.addEventListener('dragstart', (e) => {
-    const row = e.target.closest('[data-row]');
+    if (!grip) return;                                            // 只在 ⠿ 手柄上启动拖拽
+    const row = grip.closest('[data-row]');
     if (!row) return;
-    dragSrc = { sec: row.dataset.sec, bid: row.dataset.bid };
-    row.classList.add('dragging');
-    e.dataTransfer.effectAllowed = 'move';
-  });
-  content.addEventListener('dragover', (e) => {
-    if (!dragSrc) return;
-    const row = e.target.closest('[data-row]');
-    if (!row || row.dataset.bid === dragSrc.bid) return;
-    e.preventDefault();
-    document.querySelectorAll('.ritem.drop-target').forEach(x => x.classList.remove('drop-target'));
-    row.classList.add('drop-target');
-  });
-  content.addEventListener('drop', (e) => {
-    if (!dragSrc) return;
-    const row = e.target.closest('[data-row]');
-    if (!row) { cleanupDrag(); return; }
-    e.preventDefault();
-    const sec = dragSrc.sec;
-    const arr = activeRecipe().sections[sec];
-    const from = arr.findIndex(x => x.id === dragSrc.bid);
-    const T = arr.findIndex(x => x.id === row.dataset.bid);
-    if (from < 0 || T < 0 || from === T) { cleanupDrag(); return; }
-    const [m] = arr.splice(from, 1);
-    const after = e.clientY > row.getBoundingClientRect().top + row.getBoundingClientRect().height / 2;
-    let desired = after ? (from < T ? T : T + 1) : (from < T ? T - 1 : T);
-    arr.splice(desired, 0, m);
-    cleanupDrag();
-    refreshSection(sec);
-  });
-  content.addEventListener('dragend', cleanupDrag);
+    if (e.cancelable) e.preventDefault();                         // 阻止长按压字 / 聚焦
+    dragEl = row; started = false; startX = e.clientX; startY = e.clientY;
+    listEl = row.closest('.rows');
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onUp);
+  }
+  function onMove(e) {
+    if (!dragEl) return;
+    if (!started) {
+      if (Math.hypot(e.clientX - startX, e.clientY - startY) < 6) return;   // 轻点手柄仍算点按
+      started = true;
+      const rect = dragEl.getBoundingClientRect();
+      grabX = startX - rect.left; grabY = startY - rect.top;
+      ph = document.createElement('div');
+      ph.className = 'ritem-placeholder';
+      ph.style.height = rect.height + 'px';
+      dragEl.classList.add('dragging');
+      dragEl.style.position = 'fixed';
+      dragEl.style.width = rect.width + 'px';
+      dragEl.style.left = rect.left + 'px';
+      dragEl.style.top = rect.top + 'px';
+      dragEl.style.zIndex = '100';
+      dragEl.style.pointerEvents = 'none';
+      dragEl.parentNode.insertBefore(ph, dragEl);
+    }
+    dragEl.style.left = (e.clientX - grabX) + 'px';
+    dragEl.style.top = (e.clientY - grabY) + 'px';
+    if (e.cancelable) e.preventDefault();                          // 拖拽中阻止页面滚动 / 选字
+    const under = document.elementFromPoint(e.clientX, e.clientY);
+    const over = under && under.closest('[data-row]');
+    if (over && over !== dragEl && over !== ph && over.parentNode === listEl) {
+      const r = over.getBoundingClientRect();
+      if ((e.clientY - r.top) < (r.height / 2)) listEl.insertBefore(ph, over);
+      else listEl.insertBefore(ph, over.nextSibling);
+    }
+  }
+  function onUp() {
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+    document.removeEventListener('pointercancel', onUp);
+    if (!dragEl) return;
+    if (started) {
+      if (ph && ph.parentNode) {
+        listEl.insertBefore(dragEl, ph);   // 把被拖行归位到占位处
+        ph.parentNode.removeChild(ph);
+      }
+      dragEl.classList.remove('dragging');
+      dragEl.style.position = ''; dragEl.style.width = ''; dragEl.style.left = '';
+      dragEl.style.top = ''; dragEl.style.zIndex = ''; dragEl.style.pointerEvents = '';
+      const order = Array.from(listEl.children).filter(c => c.dataset && c.dataset.bid).map(c => c.dataset.bid);
+      const sec = dragEl.dataset.sec;
+      const arr = state.editing.sections[sec];
+      const map = new Map(arr.map(x => [x.id, x]));
+      const next = order.map(id => map.get(id)).filter(Boolean);
+      if (next.length < arr.length) arr.forEach(x => { if (!next.includes(x)) next.push(x); });
+      state.editing.sections[sec] = next;
+      refreshSection(sec);
+      refreshSection('prep');   // 备菜区自动跟随用料新顺序
+    } else {
+      if (ph && ph.parentNode) ph.parentNode.removeChild(ph);
+      dragEl.classList.remove('dragging');
+      dragEl.style.position = ''; dragEl.style.width = ''; dragEl.style.left = '';
+      dragEl.style.top = ''; dragEl.style.zIndex = ''; dragEl.style.pointerEvents = '';
+    }
+    dragEl = null; started = false; ph = null; listEl = null;
+  }
 }
 
 /* ---------------- 初始化 ---------------- */
@@ -4898,7 +4939,8 @@ function memoQuillToStorage(html) {
   div.innerHTML = html;
   div.querySelectorAll('.ql-ui').forEach(e => e.remove());
   div.querySelectorAll('li[data-action]').forEach(e => { e.removeAttribute('data-action'); e.removeAttribute('data-id'); });
-  return div.innerHTML;
+  // 剥离运行期零宽空格(U+200B)垫片：它仅为让 iOS 能起中文拼音组合，不应进入存档
+  return div.innerHTML.replace(/\u200b/g, '').replace(/&#8203;/g, '');
 }
 
 async function memoQuillImageHandler() {
@@ -4911,31 +4953,29 @@ async function memoQuillImageHandler() {
   });
 }
 
-/* 备忘录·手机端列表空行中文/标点无法输入修复（v183）
-   现象：手机端在待办/有序/无序列表行按回车换出新行后，光标卡在列表符号(.ql-ui)之后；
-   手机输入法要打拼音需"往前读一句上下文"，但该只读符号挡住了读取 → 中文与中文标点打不出
-   （英文/数字/emoji 不需要前文，照常可打；桌面端走另一通道，正常）。
-   修法：仅在手机端 + 空列表行 + 光标确实落在符号后时，把原生光标挪到符号前。
-   红线：只调整光标位置，不碰 .ql-ui、不改任何样式、不动待办勾选；桌面端一行不动。 */
 var __memoIsMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+/* 备忘录·手机端列表空行中文/标点无法输入修复（v184，iOS Safari 方案）
+   现象：手机端（iOS Safari）在待办/有序/无序列表行按回车换出新空行后，本行只有
+   「contenteditable=false 的列表符号 + <br>」、无任何真实文字；iOS 的 UITextInput 在
+   该位置取不到「可组合起点」→ 中文拼音(markedText)起不来，中文/中文标点打不出
+   （英文/数字/emoji 走逐个 commitText，不需组合起点，正常）。
+   修法：仅在手机端 + 空列表项（去掉零宽后无可见文字）时，在该行插一个零宽空格(U+200B)
+   作为「可编辑文本起点」让 iOS 能起中文；零宽不可见、不影响显示，且存储时由
+   memoQuillToStorage 剥离，存档干净不污染。桌面端 UA 不触发，一行不动。
+   红线：不改 .ql-ui / 不改样式 / 不重写列表逻辑 / 不影响 v164 待办勾选。 */
 function memoFixListCursorMobile() {
   if (!__memoIsMobile || typeof memoQuill === 'undefined' || !memoQuill) return;
   var range = memoQuill.getSelection();
-  if (!range || range.length) return;                 // 仅处理折叠光标（无选中）
+  if (!range || range.length) return;
   var pair = memoQuill.getLine(range.index);
   var line = pair && pair[0];
   if (!line || !line.domNode || line.domNode.nodeName !== 'LI') return;
-  if (line.length() > 1) return;                      // 行内已有内容则不处理（只在空行触发）
   var li = line.domNode;
-  if (!li.querySelector('.ql-ui')) return;            // 仅列表行（待办/有序/无序带符号）
-  var sel = window.getSelection();
-  if (!sel || !sel.rangeCount) return;
-  if (sel.anchorNode !== li || sel.anchorOffset < 1) return;  // 仅「光标卡在符号后」
-  var rg = document.createRange();
-  rg.setStart(li, 0);                                 // 把光标移到符号前
-  rg.collapse(true);
-  sel.removeAllRanges();
-  sel.addRange(rg);
+  if (!li.querySelector('.ql-ui')) return;
+  var txt = li.textContent || '';
+  if (txt.replace(/\u200b/g, '').trim().length > 0) return;
+  if (txt.indexOf('\u200b') >= 0) return;
+  memoQuill.insertText(range.index, '\u200b', 'user');
 }
 
 function renderMemoEditor() {
