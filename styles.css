@@ -155,6 +155,9 @@ body {
 .sync-dot.err { background: #e23b3b; }
 @keyframes syncPulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
 .topbar-actions { display: flex; gap: 10px; align-items: center; }
+.home-sched-strip { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: #EEEDFE; color: #534AB7; border-radius: 10px; padding: 10px 16px; margin: 0 -22px 14px; cursor: pointer; font-size: 13px; }
+.home-sched-pill { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; }
+.home-sched-strip .home-add-m { display: none; }
 .content { flex: 1; overflow-y: auto; padding: 22px; }
 
 /* ============ 通用按钮 ============ */
@@ -766,6 +769,14 @@ body {
     background: rgba(255,255,255,.8); border-color: rgba(244,220,232,.8);
   }
   .topbar-actions { flex: 0 0 auto; }
+    body.view-library .topbar-left { flex: 0 0 auto; }
+    body.view-library .topbar-actions .btn.primary[data-action="open-editor-new"] { display: none; }
+    body.view-library .topbar { justify-content: space-between; }
+    body.lib-home .topbar-actions { display: none; }
+    .recipe-actions .btn { padding: 5px 9px; font-size: 13px; }
+    .home-sched-strip { background: transparent; color: inherit; border-radius: 0; padding: 8px 14px; margin: 0 -14px 12px; }
+    .home-sched-pill { background: #EEEDFE; color: #534AB7; border-radius: 999px; padding: 7px 11px; }
+    .home-sched-strip .home-add-m { display: inline-flex; }
 
   /* 内容区收窄留白 */
   .content { padding: 14px 14px 20px; overflow: visible; }
@@ -1165,6 +1176,10 @@ body {
   background-color: var(--panel-2); margin-bottom: 16px;
 }
 .view-head h1 { margin: 0 0 8px; font-size: 22px; }
+.view-titlebar { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.view-titlebar h1 { flex: 1 1 auto; min-width: 0; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.recipe-actions { display: flex; gap: 6px; flex: 0 0 auto; }
+.recipe-actions .btn { white-space: nowrap; }
 .view-video {
   display: inline-block; margin-bottom: 10px; font-size: 13px; font-weight: 600;
   color: var(--brand); text-decoration: none; border: 1px solid var(--brand-soft);
@@ -1995,3 +2010,14 @@ body:has(.memo-chat) .topbar { position: sticky; top: 0; z-index: 20; }
 .memo-card-readonly .memo-card-title { font-weight: 700; font-size: 15px; color: var(--text); }
 .memo-card-readonly .memo-card-body { padding: 4px 12px 10px; }
 .memo-card-readonly .memo-card-foot { padding: 6px 12px; border-top: 1px solid var(--border); }
+
+/* 菜谱只读页 → 长图导出弹窗（v192 新增） */
+.recipe-export-panel { max-width: min(560px, 94vw); max-height: 90vh; display: flex; flex-direction: column; }
+.recipe-export-panel .modal-body { overflow: hidden; display: flex; flex-direction: column; }
+.recipe-export-scroll { overflow: auto; max-height: 60vh; background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px; margin-bottom: 10px; }
+.recipe-export-img { width: 100%; height: auto; display: block; border-radius: 6px; }
+.recipe-export-tip { font-size: 12.5px; color: var(--text-2); line-height: 1.6; margin: 0 0 10px; }
+.recipe-export-dl { display: block; text-align: center; text-decoration: none; }
+.recipe-save-opt { display: block; width: 100%; margin-top: 8px; text-align: center; text-decoration: none; }
+.recipe-save-cancel { display: block; width: 100%; margin-top: 8px; text-align: center; color: var(--text-2); }
+.recipe-export-loading { padding: 26px; text-align: center; font-size: 14px; color: var(--text-2); }
