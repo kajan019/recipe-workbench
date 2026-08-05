@@ -2696,6 +2696,13 @@ function nutSelListHTML() {
 function nutRecDetailHTML(rec) {
   const sub = rec.custom ? '自定义记录（手动添加）'
     : '含菜谱：' + (rec.recipes || []).map(x => escHtml(x.name) + (x.scale ? (x.scale.mode === 'portion' ? `（基准份量 ${x.scale.actual != null ? x.scale.actual : ''}g）` : `（基准 ${x.scale.amount}${x.scale.unit}）`) : (x.servings != null ? `（${x.servings}份）` : ''))).join('、');
+  const sorted = [...rec.rows].sort((a, b) => (b.kcal || 0) - (a.kcal || 0));
+  const SHOW = 5;
+  const topRows = sorted.slice(0, SHOW);
+  const moreRows = sorted.slice(SHOW);
+  const rowHTML = x => `<div class="nut-rec-row">${escHtml(x.name)} ≈ ${Math.round(x.grams)}g · ${Math.round(x.kcal)}kcal</div>`;
+  const moreHTML = moreRows.length ? `<div class="nut-rec-more dn">${moreRows.map(rowHTML).join('')}</div>
+      <button class="tiny nut-rec-more-btn" data-action="nut-rec-toggle-more">展开全部 ${moreRows.length} 项</button>` : '';
   return `
     <div class="nut-rec-detail">
       <div class="nut-rec-detail-head">
@@ -2704,11 +2711,12 @@ function nutRecDetailHTML(rec) {
       </div>
       <div class="nut-rec-kcal">${rec.total.kcal} 千卡</div>
       <div class="nut-extra">
-        <span class="ne sugar">糖 ${rec.total.sugar}g</span>
-        <span class="ne sodium">盐 ${rec.total.sodium}mg</span>
-        <span class="ne fiber">膳食纤维 ${rec.total.fiber}g</span>
+        <span class="ne protein">蛋白 ${rec.total.protein}g</span>
+        <span class="ne fat">脂肪 ${rec.total.fat}g</span>
+        <span class="ne carb">碳水 ${rec.total.carb}g</span>
       </div>
-      <div class="nut-rec-rows">${rec.rows.map(x => `<div class="nut-rec-row">${escHtml(x.name)} ≈ ${Math.round(x.grams)}g · ${Math.round(x.kcal)}kcal</div>`).join('')}</div>
+      <div class="nut-rec-rows">${topRows.map(rowHTML).join('')}</div>
+      ${moreHTML}
       <div class="nut-rec-recipes">${sub}</div>
       <div class="nut-rec-acts">
         ${rec.custom ? '' : `<button class="tiny" data-action="nut-rec-apply" data-id="${escAttr(rec.id)}">套用此记录</button>`}
@@ -2716,7 +2724,6 @@ function nutRecDetailHTML(rec) {
       </div>
     </div>`;
 }
-/* 记录副标题（菜谱名 / 自定义记录 / 破折号） */
 function nutRecSub(rec) {
   if (rec.recipes && rec.recipes.length) return rec.recipes.map(x => escHtml(x.name)).join('、');
   if (rec.custom) return '自定义记录';
@@ -3548,6 +3555,15 @@ async function handleClick(e) {
     case 'nut-rec-apply': {
       applyNutRecord(t.dataset.id);
       rerenderNut(); toast('已套用该记录的菜谱与用量'); break;
+    }
+    case 'nut-rec-toggle-more': {
+      const det = t.closest('.nut-rec-detail');
+      const more = det ? det.querySelector('.nut-rec-more') : null;
+      if (more) {
+        const hidden = more.classList.toggle('dn');
+        t.textContent = hidden ? '展开全部 ' + more.children.length + ' 项' : '收起';
+      }
+      break;
     }
     case 'nut-import': openNutImportModal(); break;
     case 'nut-import-do': {

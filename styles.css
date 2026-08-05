@@ -559,6 +559,9 @@ body {
 .nut-extra .ne.sugar { background: #fff0f5; color: #d6489a; }
 .nut-extra .ne.sodium { background: #fff4e0; color: #c47f12; }
 .nut-extra .ne.fiber { background: #eafaf0; color: #1f9d57; }
+.nut-extra .ne.protein { background: #eafaf0; color: #1f9d57; }
+.nut-extra .ne.fat { background: #fff4e0; color: #c47f12; }
+.nut-extra .ne.carb { background: #e8f1ff; color: #3a7bd5; }
 .nut-ov { display: inline-flex; align-items: center; gap: 4px; background: #fff; border: 1px solid var(--border); border-radius: 999px; padding: 3px 8px; font-size: 12px; }
 .nut-ov-name { font-weight: 600; }
 .nut-ov-input { width: 52px; border: none; border-bottom: 1px solid var(--border-strong); font-size: 12px; padding: 2px 3px; text-align: center; font-family: inherit; }
@@ -702,7 +705,11 @@ body {
 .nut-rec-detail { background: linear-gradient(135deg, #f3e9ff 0%, #ffe7f3 100%); border-radius: 16px; padding: 16px; margin: 14px 0; }
 .nut-rec-detail-head { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--text-2); margin-bottom: 6px; }
 .nut-rec-kcal { font-size: 30px; font-weight: 900; color: var(--text); }
-.nut-rec-rows { display: grid; gap: 4px; margin: 10px 0; font-size: 13px; color: var(--text-2); }
+.nut-rec-rows { display: block; margin: 10px 0; font-size: 13px; color: var(--text-2); overflow-x: hidden; }
+.nut-rec-row { min-width: 0; padding: 2px 0; word-break: break-word; overflow-wrap: anywhere; }
+.nut-rec-more { display: block; }
+.nut-rec-more.dn { display: none; }
+.nut-rec-more-btn { margin: 6px 0 0; }
 .nut-rec-recipes { font-size: 12px; color: var(--text-3); }
 
 /* ============ 营养库批量导入弹窗 ============ */
