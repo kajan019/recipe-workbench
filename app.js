@@ -1668,6 +1668,41 @@ function showRecipeExportModal(name, url) {
       </div>`);
   }
 }
+/* 备忘录·单条笔记 → 长图导出：复用菜谱导出的 html2canvas + 保存弹窗（桌面选路径/剪贴板，手机直接下载）。
+   抓「单条笔记的只读渲染」（标题 + 正文 + 时间），包进粉色卡片底后再 html2canvas，与菜谱长图同款观感。 */
+async function exportMemoNote(id) {
+  const n = state.memoNotes.find(x => x.id === id);
+  if (!n) return;
+  const content = document.getElementById('content');
+  const w = Math.min((content ? content.clientWidth : window.innerWidth), 520);
+  const board = document.createElement('div');
+  board.style.cssText = 'position:fixed;left:-100000px;top:0;box-sizing:border-box;background:linear-gradient(180deg,#fffafd 0%,#fdf2f8 100%);background-color:#fffafd;padding:24px;width:' + w + 'px;';
+  const card = document.createElement('div');
+  card.className = 'memo-card expanded';
+  card.style.margin = '0';
+  card.innerHTML =
+    '<div class="memo-card-top"><div class="memo-card-title">' + escHtml(n.title || '未命名笔记') + '</div></div>' +
+    '<div class="memo-card-body ql-editor">' + memoCardBodyHtml(n, false) + '</div>' +
+    '<div class="memo-card-foot"><span class="memo-time">' + memoFmtTime(n.updatedAt) + '</span></div>';
+  board.appendChild(card);
+  document.body.appendChild(board);
+  openModal('<div class="modal-mask"><div class="modal-panel recipe-export-loading"><p>正在生成图片…</p></div></div>');
+  try {
+    await new Promise(res => setTimeout(res, 80));
+    const canvas = await html2canvas(board, {
+      useCORS: true, allowTaint: false, backgroundColor: null,
+      scale: Math.min(window.devicePixelRatio || 1, 2), logging: false,
+      windowWidth: board.scrollWidth, windowHeight: board.scrollHeight
+    });
+    const url = canvas.toDataURL('image/png');
+    showRecipeExportModal(n.title || '未命名笔记', url);
+  } catch (err) {
+    console.error('[memo-export]', err);
+    openModal('<div class="modal-mask" data-action="modal-close"><div class="modal-panel recipe-export-loading"><p>导出失败，请重试</p><button class="btn" data-action="modal-close">关闭</button></div></div>');
+  } finally {
+    if (board.parentNode) document.body.removeChild(board);
+  }
+}
 
 function refreshViewScaled(r) {
   const f = scaleFactorOf(r);
@@ -3660,10 +3695,10 @@ async function handleClick(e) {
         } else {
           changed = memoDirty;
         }
-        /* 只有「编辑过 + 保存」才刷新时间；只看不编 / 没改动 → 时间不动、位置不变 */
+        /* 编辑保存且有改动：刷新「修改时间」并把该笔记置顶（ord 置为全局最小），即「最新编辑的排最前，其余笔记排序保持不变」；
+           仅「只看不编 / 无改动」不改时间也不改位置。新建笔记(见 memo-new)同样置顶；拖拽另走 persistMemoOrder 重排 ord（v207 修正：编辑后回到「最新编辑置顶」）。 */
         if (changed) {
           n.updatedAt = Date.now();
-          /* 编辑保存过的笔记自动跳到列表最顶（ord 置为当前最小再 -1）；之后仍可用拖拽二次改变排序 */
           const minOrd = state.memoNotes.reduce((m, x) => Math.min(m, (typeof x.ord === 'number' ? x.ord : 0)), 0);
           n.ord = minOrd - 1;
         }
@@ -3734,6 +3769,7 @@ async function handleClick(e) {
       }
       break;
     }
+    case 'memo-export-img': { exportMemoNote(t.dataset.id); break; }
     case 'memo-card-toggle': { const id = t.dataset.id; state.memoExpandId = (state.memoExpandId === id) ? null : id; renderMemoList(true); break; }
     case 'memo-card-cb': {
       const li = t;
@@ -4398,16 +4434,16 @@ function noteItemHTML(n) {
     + '<button class="memo-card-del" data-action="memo-del" data-id="' + escAttr(n.id) + '" title="删除">🗑</button>'
     + '</div>';
   if (expanded) {
-    return '<div class="memo-card expanded' + (n.fav ? ' fav' : '') + '" draggable="' + draggable + '">'
+    return '<div class="memo-card expanded' + (n.fav ? ' fav' : '') + '" draggable="' + draggable + '" data-id="' + escAttr(n.id) + '">'
       + '<div class="memo-card-grip" aria-label="拖动排序">⋮⋮</div>'
       + '<div class="memo-card-main" data-action="memo-card-toggle" data-id="' + escAttr(n.id) + '">'
       + '<div class="memo-card-top"><div class="memo-card-title">' + escHtml(n.title || '未命名笔记') + '</div>' + actions + '</div>'
       + '</div>'
       + '<div class="memo-card-body ql-editor">' + memoCardBodyHtml(n) + '</div>'
-      + '<div class="memo-card-foot"><button class="memo-card-copy" data-action="memo-copy" data-id="' + escAttr(n.id) + '">📋 复制文本</button>' + chips + '<span class="memo-time">' + memoFmtTime(n.updatedAt) + '</span></div>'
+      + '<div class="memo-card-foot"><button class="memo-card-copy" data-action="memo-copy" data-id="' + escAttr(n.id) + '">📋 复制</button><button class="memo-card-img" data-action="memo-export-img" data-id="' + escAttr(n.id) + '" title="保存图片" aria-label="保存图片">🖼</button>' + chips + '<span class="memo-time">' + memoFmtTime(n.updatedAt) + '</span></div>'
       + '</div>';
   }
-  return '<div class="memo-card' + (n.fav ? ' fav' : '') + '" draggable="' + draggable + '">'
+  return '<div class="memo-card' + (n.fav ? ' fav' : '') + '" draggable="' + draggable + '" data-id="' + escAttr(n.id) + '">'
     + '<div class="memo-card-grip" aria-label="拖动排序">⋮⋮</div>'
     + '<div class="memo-card-main" data-action="memo-card-toggle" data-id="' + escAttr(n.id) + '">'
     + '<div class="memo-card-top"><div class="memo-card-title">' + escHtml(n.title || '未命名笔记') + '</div>' + actions + '</div>'

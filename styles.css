@@ -1376,6 +1376,8 @@ body {
 .memo-card-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 .memo-card-copy { border: 1px solid var(--border); background: var(--panel); color: var(--text-2); border-radius: 8px; padding: 3px 10px; font-size: 12px; cursor: pointer; }
 .memo-card-copy:hover { border-color: #a78bfa; color: #6d28d9; }
+.memo-card-img { border: 1px solid var(--border); background: var(--panel); color: var(--text-2); border-radius: 8px; padding: 4px 9px; font-size: 14px; line-height: 1; cursor: pointer; }
+.memo-card-img:hover { border-color: #a78bfa; color: #6d28d9; }
 
 /* 标签区：全部笔记收起 + 收藏筛选 */
 .memo-tags-head { display: flex; flex-direction: column; gap: 6px; }
